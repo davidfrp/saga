@@ -1,16 +1,15 @@
 import { Flags } from '@oclif/core'
-import { AuthenticatedCommand } from '../..'
-import { AtlassianService, GitService } from '../../services'
-import { askIssueTransitionTo } from '../../prompts'
+import { AuthenticatedCommand } from '..'
+import { AtlassianService, GitService } from '../services'
+import { askIssueTransitionTo } from '../prompts'
 import * as chalk from 'chalk'
 import { format } from 'util'
-import { IssueTransition, StatusCategory } from '../../@types/atlassian'
+import { IssueTransition, StatusCategory } from '../@types/atlassian'
 
-export default class Ready extends AuthenticatedCommand {
+export default class End extends AuthenticatedCommand {
   static summary = 'Mark an issue as ready for review'
 
-  static examples = ['$ saga issue ready']
-
+  // TODO add --verbose -v flag.
   // TODO add --reviewer -r flag.
   static flags = {
     web: Flags.boolean({
@@ -27,7 +26,7 @@ export default class Ready extends AuthenticatedCommand {
   }
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(Ready)
+    const { flags } = await this.parse(End)
 
     const git = new GitService()
 

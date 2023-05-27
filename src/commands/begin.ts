@@ -1,9 +1,9 @@
 import * as chalk from 'chalk'
 import * as doT from 'dot'
 import { Args, Flags, ux } from '@oclif/core'
-import { AuthenticatedCommand } from '../..'
-import { AtlassianService, GitService } from '../../services'
-import { Issue, IssueTransition, StatusCategory } from '../../@types/atlassian'
+import { AuthenticatedCommand } from '..'
+import { AtlassianService, GitService } from '../services'
+import { Issue, IssueTransition, StatusCategory } from '../@types/atlassian'
 import {
   askProject,
   askIssue,
@@ -12,13 +12,11 @@ import {
   askIssueTransitionTo,
   askPullRequestBody,
   askBaseBranch,
-} from '../../prompts'
+} from '../prompts'
 import { format } from 'util'
 
-export default class Work extends AuthenticatedCommand {
+export default class Begin extends AuthenticatedCommand {
   static summary = 'Start working on an issue'
-
-  static examples = ['$ saga issue work-on', '$ saga issue work-on --project']
 
   static args = {
     id: Args.string({ description: 'Id or key of the issue to work on' }),
@@ -43,7 +41,7 @@ export default class Work extends AuthenticatedCommand {
   }
 
   async run(): Promise<void> {
-    const { args, flags } = await this.parse(Work)
+    const { args, flags } = await this.parse(Begin)
 
     const git = new GitService({
       verbose: flags.verbose,
