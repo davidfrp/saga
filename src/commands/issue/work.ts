@@ -13,6 +13,7 @@ import {
   askPullRequestBody,
   askBaseBranch,
 } from '../../prompts'
+import { format } from 'util'
 
 export default class Work extends AuthenticatedCommand {
   static summary = 'Start working on an issue'
@@ -34,12 +35,19 @@ export default class Work extends AuthenticatedCommand {
       char: 'w',
       description: 'Opens the pull request in your browser after creation',
     }),
+    verbose: Flags.boolean({
+      char: 'v',
+      description:
+        'Show more information about the process, useful for debugging',
+    }),
   }
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(Work)
 
-    const git = new GitService()
+    const git = new GitService({
+      verbose: flags.verbose,
+    })
 
     if (git.hasUncommittedChanges()) {
       console.error(
@@ -132,7 +140,7 @@ ${chalk.yellow('!')} Kunne ikke finde nogen sag med id'et ${chalk.bold(args.id)}
       argName: ['issue'],
     })({ issue })
 
-    const branchName = await askBranchName(defaultBranchName, (input) => {
+    const branch = await askBranchName(defaultBranchName, (input) => {
       if (!branchNamePattern.test(input)) {
         return `Navnet passer ikke til mønsteret ${chalk.red(
           branchNamePattern,
@@ -149,20 +157,48 @@ ${chalk.yellow('!')} Kunne ikke finde nogen sag med id'et ${chalk.bold(args.id)}
     })
 
     const popularBaseBranches = git.getPopularBaseBranches()
-    const mostPopularBaseBranch = popularBaseBranches[0]
 
-    let baseBranch = flags.base || this.store.get('baseBranch')
-    if (!baseBranch || baseBranch !== mostPopularBaseBranch) {
-      baseBranch = await askBaseBranch(popularBaseBranches)
-      this.store.set('baseBranch', baseBranch)
+    const baseBranches = [
+      ...new Set([...popularBaseBranches, ...git.getRemoteBranches()]),
+    ]
+
+    let baseBranch = this.store.get('baseBranch')
+    if (!baseBranch) {
+      if (baseBranches.length > 1) {
+        baseBranch = await askBaseBranch(baseBranches)
+      } else {
+        if (baseBranches.length === 1) {
+          baseBranch = baseBranches.pop() as string
+        } else {
+          baseBranch = await git.getCurrentBranch()
+        }
+
+        console.log(
+          `\n${chalk.yellow('!')} ${format(
+            'Using %s as base branch since there are no other branches to choose from.',
+            chalk.cyan(baseBranch),
+          )}\n`,
+        )
+      }
     }
-    doT
+
+    if (git.doesOpenPrExist(branch, baseBranch)) {
+      console.error(
+        `${chalk.red('✗')} ${format(
+          'An open pull request already exists for %s into %s',
+          chalk.cyan(branch),
+          chalk.cyan(baseBranch),
+        )}`,
+      )
+      this.exit(1)
+    }
 
     const prTitlePattern = this.store.get('prTitlePattern') || '(?:)'
     const prTitleTemplate = this.store.get('prTitleTemplate') || ''
     const defaultPrTitle = doT.template(prTitleTemplate, {
       argName: ['issue'],
     })({ issue })
+
     const pullRequestTitle = await askPullRequestTitle(
       defaultPrTitle,
       new RegExp(prTitlePattern),
@@ -172,72 +208,116 @@ ${chalk.yellow('!')} Kunne ikke finde nogen sag med id'et ${chalk.bold(args.id)}
     const defaultPrBody = doT.template(prBodyTemplate, {
       argName: ['issue'],
     })({ issue })
+
     const prBody = await askPullRequestBody(defaultPrBody)
 
     // Submit
 
-    let didIssueTransition,
-      isOnNewBranch,
-      wasPullRequestCreated = false
+    let isReadyForWork = true
 
-    try {
-      git.checkoutBranch(baseBranch)
-      git.pull()
-      git.createBranch(branchName)
-      git.checkoutBranch(branchName)
-      git.setUpstream(branchName, 'origin')
+    console.log()
 
-      if (git.getCurrentBranch() === branchName) isOnNewBranch = true
+    this.spinner.start(format('Switching branch to %s', chalk.cyan(branch)))
 
-      git.createPullRequest(pullRequestTitle, prBody, {
-        sourceBranch: branchName,
-        targetBranch: baseBranch,
-        isDraft: true,
-      })
+    await git.checkoutBranch(baseBranch)
+    await git.pull()
+    await git.createBranch(branch)
+    await git.checkoutBranch(branch)
+    await git.setUpstream(branch, 'origin')
 
-      wasPullRequestCreated = true
-    } catch (error) {
-      console.log(
-        `${chalk.red(
-          '✗',
-        )} Der skete en fejl ved oprettelse af pull requesten. Prøv igen senere.`,
+    const currentBranch = await git.getCurrentBranch()
+
+    if (branch === currentBranch) {
+      this.spinner.succeed(format('Switched branch to %s', chalk.cyan(branch)))
+    } else {
+      isReadyForWork = false
+      this.spinner.fail(
+        format('Could not switch branch to %s', chalk.cyan(branch)),
       )
     }
 
     try {
-      atlassianService.transitionIssue(issue.key, transition.id)
-      didIssueTransition = true
-    } catch (_) {
-      console.log(`
-${chalk.yellow('!')} Din sags status blev ikke ændret automatisk.
-  For at ændre status på din sag skal du selv gå ind på Jira og ændre den:
-  ${issue.url}
-      `)
+      this.spinner.start(
+        format(
+          'Transitioning issue %s to %s',
+          chalk.cyan(issue.key),
+          chalk.cyan(transition.name),
+        ),
+      )
 
-      await ux.wait(2500)
+      if (issue.status.name !== transition.name) {
+        await atlassianService.transitionIssue(issue.key, transition.id)
+        this.spinner.succeed(
+          format(
+            'Transitioned issue %s from %s to %s',
+            chalk.cyan(issue.key),
+            chalk.cyan(issue.status.name),
+            chalk.cyan(transition.name),
+          ),
+        )
+      } else {
+        this.spinner.succeed(
+          format(
+            'Issue %s already has status %s',
+            chalk.cyan(issue.key),
+            chalk.cyan(transition.name),
+          ),
+        )
+      }
+    } catch (error) {
+      isReadyForWork = false
+      this.spinner.fail(
+        format(
+          'Could not transition issue %s to %s',
+          chalk.cyan(issue.key),
+          chalk.cyan(transition.name),
+        ),
+      )
     }
 
-    console.log(`
-Du kan nu begynde at arbejde på ${chalk.bold(issue.key)}
-  ${
-    didIssueTransition
-      ? `${chalk.green('✓')} Flyttede ${chalk.bold(
-          issue.key,
-        )} til status ${chalk.bold(transition.name)}`
-      : chalk.red('✗') + ' Status ikke ændret'
-  }
-  ${
-    isOnNewBranch
-      ? `${chalk.green('✓')} Skiftede til branch ${chalk.bold(branchName)}`
-      : chalk.red('✗') + ' Skiftede ikke branch'
-  }
-  ${
-    wasPullRequestCreated
-      ? chalk.green('✓') + ' Oprettede pull request'
-      : chalk.red('✗') + ' Oprettede ikke pull request'
-  }
-`)
+    try {
+      this.spinner.start(
+        format(
+          'Creating pull request for %s into %s',
+          chalk.cyan(branch),
+          chalk.cyan(baseBranch),
+        ),
+      )
+      await git.createPullRequest(pullRequestTitle, prBody, {
+        sourceBranch: branch,
+        targetBranch: baseBranch,
+        isDraft: true,
+      })
+      const prUrl = await git.getPullRequestUrl()
+      this.spinner.succeed(format('Created pull request %s', prUrl))
+      if (flags.web) this.open(prUrl)
+    } catch (error) {
+      isReadyForWork = false
+      this.spinner.fail(
+        format(
+          'Could not create pull request for %s into %s',
+          chalk.cyan(branch),
+          chalk.cyan(baseBranch),
+        ),
+      )
+    }
 
-    if (flags.web) this.open(issue.url)
+    console.log()
+
+    if (isReadyForWork) {
+      console.log(
+        format("You're ready to start working on %s", chalk.cyan(issue.key)),
+      )
+    } else {
+      let message = `${chalk.yellow('!')} Something went wrong.`
+      if (!flags.verbose) {
+        message += format(
+          ' You can run the command with the %s flag to get more information.',
+          chalk.bold('--verbose'),
+        )
+      }
+
+      console.log(message)
+    }
   }
 }

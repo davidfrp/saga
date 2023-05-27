@@ -7,6 +7,7 @@ import {
 import { AtlassianService } from '../../services'
 import { BaseCommand } from '../..'
 import * as chalk from 'chalk'
+import { format } from 'util'
 
 export default class Login extends BaseCommand {
   static flags = {}
@@ -60,21 +61,18 @@ export default class Login extends BaseCommand {
       const currentUser = await atlassianService.getCurrentUser()
 
       console.log(
-        `${chalk.green('✓')} Du er logget ind som ${chalk.cyan(
-          currentUser.displayName,
-        )} (${chalk.cyan(currentUser.email)})\n
-Du kan nu bruge ${chalk.bold(
-          `${this.config.bin} auth logout`,
-        )} for at logge ud.\n`,
+        `${chalk.green('✓')} ${format(
+          'Du er logget ind som %s (%s)',
+          chalk.cyan(currentUser.displayName),
+          chalk.cyan(currentUser.email),
+        )}\n`,
       )
     } catch (_) {
       console.log(
-        `${chalk.red('✗')} Du kunne ikke logges ind på ${chalk.cyan(
-          jiraHostname,
-        )} med de angivne oplysninger.
-  Hvis problemet fortsætter, kan du prøve at logge ind på ny med ${chalk.bold(
-    `${this.config.bin} auth login`,
-  )}\n`,
+        `${chalk.red('✗')} ${format(
+          'Du kunne ikke logges ind på %s med de angivne oplysninger.',
+          chalk.cyan(jiraHostname),
+        )}\n`,
       )
 
       // TODO Reset/remove email, jiraHostname, and token.

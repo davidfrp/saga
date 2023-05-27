@@ -1,6 +1,8 @@
 import { Command } from '@oclif/core'
 import { exec } from 'shelljs'
 import { Store } from './store'
+import * as chalk from 'chalk'
+import * as ora from 'ora'
 
 // TODO Make these non-optional.
 export interface StoreKeys {
@@ -86,8 +88,27 @@ const store = new Store<StoreKeys, AuthStoreKeys>(
 )
 
 export default abstract class BaseCommand extends Command {
+  private _spinner: ora.Ora = ora({ spinner: 'dots2' })
+
   get store(): Store<StoreKeys, AuthStoreKeys> {
     return store
+  }
+
+  get spinner() {
+    return {
+      start: (message?: string) => this._spinner.start(message),
+      succeed: (message?: string) =>
+        this._spinner.stopAndPersist({
+          symbol: chalk.green('✓'),
+          text: message,
+        }),
+      fail: (message?: string) => {
+        this._spinner.stopAndPersist({
+          symbol: chalk.red('✗'),
+          text: message,
+        })
+      },
+    }
   }
 
   /**

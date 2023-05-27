@@ -25,6 +25,7 @@
     "inquirer": "^8.0.0",
     "inquirer-autocomplete-prompt": "^2.0.0",
     "keytar": "^7.9.0",
+    "ora": "5.4.1",
     "shelljs": "^0.8.5",
     "update-notifier": "^6.0.2"
   },

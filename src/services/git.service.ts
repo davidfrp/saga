@@ -6,19 +6,7 @@ export type CreatePullRequestOptions = {
   pushEmptyCommit?: boolean
   sourceBranch?: string
   targetBranch?: string
-  remote?: string
   reviewers?: string[]
-}
-
-export type CreatePullRequestResponse = {
-  /**
-   * Whether the pull request is a draft.
-   */
-  isDraft: boolean
-  /**
-   * The GitHub url for the pull request.
-   */
-  url: string
 }
 
 export type CheckoutOptions = {
@@ -62,9 +50,27 @@ function sortAndGroup(data: { name: string; date: Date }[]): string[] {
   return uniqueNames
 }
 
+function execAsync(command: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    exec(command, (code, output, error) => {
+      if (code) {
+        reject(new Error(error))
+        return
+      }
+
+      resolve(output)
+    })
+  })
+}
+
+export type GitServiceOptions = {
+  verbose?: boolean
+}
+
 export default class GitService {
-  constructor() {
-    shelljsConfig.silent = true
+  constructor(options?: GitServiceOptions) {
+    shelljsConfig.silent = !Boolean(options?.verbose)
+    shelljsConfig.verbose = Boolean(options?.verbose)
 
     if (!this.isGitInstalled())
       throw new Error(
@@ -115,73 +121,79 @@ Tjek at du har forbindelse til internettet og er logget ind ved at køre kommand
     return code === 0
   }
 
+  doesOpenPrExist(head: string, base: string): boolean {
+    const output = exec(
+      `gh pr list --json baseRefName,headRefName,state`,
+    ).stdout
+
+    const data = JSON.parse(output)
+
+    const openPrExists = Boolean(
+      data.find(
+        (pr: any) =>
+          pr.baseRefName === base &&
+          pr.headRefName === head &&
+          pr.state === 'OPEN',
+      ),
+    )
+
+    return openPrExists
+  }
+
   createPullRequest(
     title: string,
     body: string,
     options: CreatePullRequestOptions,
-  ): CreatePullRequestResponse {
-    if (this.doesPullRequestExist()) {
-      throw new Error(
-        'Der findes allerede en pull request for denne branch ind i base branchen.',
-      )
-    }
+  ): Promise<void> {
+    return new Promise(async (resolve, reject) => {
+      const branch = options.sourceBranch || this.getCurrentBranch()
 
-    if (options.pushEmptyCommit) {
-      this.commit('chore: creating pull request', { allowEmpty: true })
-      this.push()
-    }
+      const baseBranch = options.targetBranch || branch
 
-    const branch = options.sourceBranch || this.getCurrentBranch()
+      const reviewers = options.reviewers || []
 
-    const baseBranch = options.targetBranch || branch
+      if (options.isDraft) {
+        this.commit('chore: creating pull request', { allowEmpty: true })
+        this.push()
+      }
 
-    const remote = options.remote || 'origin'
+      const command = `gh pr create --title "${title}" --body "${body}" ${
+        options.isDraft ? '--draft' : ''
+      } --base ${baseBranch} --head ${branch} ${
+        reviewers.length > 0
+          ? `--reviewer ${reviewers.join(' --reviewer ')}`
+          : ''
+      }`
 
-    const reviewers = options.reviewers || []
+      exec(command, (_, output, error) => {
+        if (options.isDraft && error.toLowerCase().includes('draft')) {
+          resolve(
+            this.createPullRequest(title, body, {
+              ...options,
+              isDraft: false,
+            }),
+          )
+          return
+        }
 
-    const command = `gh pr create --title "${title}" --body "${body}" ${
-      options.isDraft ? '--draft' : ''
-    } --base ${baseBranch} --head ${remote}:${branch} ${
-      reviewers.length > 0 ? `--reviewer ${reviewers.join(' --reviewer ')}` : ''
-    }`
+        const url = this.getPullRequestUrlInText(output)
 
-    const { code, stdout, stderr } = exec(command)
+        if (!url) {
+          reject(new Error('Failed to create pull request'))
+          return
+        }
 
-    if (
-      code !== 0 &&
-      stderr.includes('No commits between') &&
-      !options.pushEmptyCommit
-    ) {
-      return this.createPullRequest(title, body, {
-        ...options,
-        pushEmptyCommit: true,
+        resolve()
       })
-    }
-
-    if (code !== 0 && options.isDraft) {
-      return this.createPullRequest(title, body, {
-        ...options,
-        isDraft: false,
-      })
-    }
-
-    const url = this.getPullRequestUrlInText(stdout)
-
-    if (code !== 0 || !url) throw new Error('Kunne ikke oprette pull request.')
-
-    return {
-      isDraft: Boolean(options.isDraft),
-      url,
-    }
+    })
   }
 
-  setUpstream(branch: string, remote: string): void {
-    exec(`git push --set-upstream ${remote} ${branch}`)
+  async setUpstream(branch: string, remote: string): Promise<void> {
+    await execAsync(`git push --set-upstream ${remote} ${branch}`)
   }
 
-  createBranch(branch: string, startingPoint?: string): boolean {
-    const { code } = exec(`git branch ${branch} ${startingPoint}`)
-    return code === 0
+  async createBranch(branch: string, startingPoint?: string): Promise<void> {
+    await execAsync(`git branch ${branch} ${startingPoint || ''}`)
   }
 
   branchExists(branch: string): boolean {
@@ -195,9 +207,8 @@ Tjek at du har forbindelse til internettet og er logget ind ved at køre kommand
     return code === 0
   }
 
-  getCurrentBranch(): string {
-    const branch = exec('git rev-parse --abbrev-ref HEAD').stdout
-
+  async getCurrentBranch(): Promise<string> {
+    const branch = await execAsync('git rev-parse --abbrev-ref HEAD')
     return branch.trim()
   }
 
@@ -207,7 +218,7 @@ Tjek at du har forbindelse til internettet og er logget ind ved at køre kommand
     const branches = output
       .split('\n')
       .map((branch) => branch.trim().replace('origin/', ''))
-      .filter((branch) => !branch.includes('->'))
+      .filter((branch) => branch && !branch.includes('->'))
 
     return branches
   }
@@ -216,25 +227,25 @@ Tjek at du har forbindelse til internettet og er logget ind ved at køre kommand
     exec('git fetch')
   }
 
-  checkoutBranch(branch: string): boolean {
-    const { code } = exec(`git checkout ${branch}`)
-    const didCheckout = code === 0
-    return didCheckout
+  async checkoutBranch(branch: string): Promise<void> {
+    await execAsync(`git checkout ${branch}`)
   }
 
-  viewPullRequestOnWeb(branch?: string): void {
-    if (!branch) branch = this.getCurrentBranch()
-
-    exec(`gh pr view --web --head ${branch}`)
+  async viewPullRequestOnWeb(): Promise<void> {
+    await execAsync(`gh pr view --web`)
   }
 
-  getPullRequestUrl(): string | undefined {
-    const { stdout: output } = exec('gh pr view --json url')
-    return this.getPullRequestUrlInText(output)
+  async getPullRequestUrl(): Promise<string> {
+    const json = await execAsync('gh pr view --json url')
+    return JSON.parse(json).url
   }
 
-  markAsReady(): void {
-    exec('gh pr ready')
+  async markAsReady(): Promise<void> {
+    await execAsync('gh pr ready')
+  }
+
+  async markAsDraft(): Promise<void> {
+    await execAsync('gh pr ready --undo')
   }
 
   hasUncommittedChanges(): boolean {
@@ -248,9 +259,8 @@ Tjek at du har forbindelse til internettet og er logget ind ved at køre kommand
     return code === 0
   }
 
-  pull(): boolean {
-    const { code } = exec('git pull')
-    return code === 0
+  async pull(): Promise<void> {
+    await execAsync('git pull')
   }
 
   isBranchNameValid(branch: string): boolean {
