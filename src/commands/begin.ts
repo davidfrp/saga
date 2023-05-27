@@ -68,17 +68,29 @@ export default class Begin extends AuthenticatedCommand {
     let projectKey = this.store.get('project')
     if (!projectKey || flags.project) {
       const projects = await atlassianService.getProjects()
-      const project = await askProject(projects)
-      projectKey = project.key
+
+      if (projects.length === 1) {
+        projectKey = projects[0].key
+        console.log(
+          `\n${chalk.yellow('!')} ${format(
+            'Using %s as project since there are no other projects to choose from.',
+            chalk.cyan(projectKey),
+          )}`,
+        )
+      } else {
+        const project = await askProject(projects)
+        projectKey = project.key
+      }
 
       this.store.set('project', projectKey)
 
       if (!flags.project) {
         console.log(
-          '\nDu kan til enhver tid skifte dit projekt ved at tilføje flaget ' +
+          `\n${format(
+            'You can change your project at any time by adding the %s flag',
             chalk.bold('--project'),
+          )}`,
         )
-        await ux.wait(2500)
       }
     }
 
@@ -91,11 +103,16 @@ export default class Begin extends AuthenticatedCommand {
       issue = await atlassianService.searchIssue(args.id)
 
       if (!issue) {
-        console.warn(`
-${chalk.yellow('!')} Kunne ikke finde nogen sag med id'et ${chalk.bold(args.id)}
-`)
+        console.warn(
+          `\n${chalk.yellow('!')} ${format(
+            'Unable to find an issue with id %s',
+            chalk.cyan(args.id),
+          )}`,
+        )
       }
     }
+
+    console.log()
 
     if (!issue) {
       const jql = `
@@ -207,7 +224,7 @@ ${chalk.yellow('!')} Kunne ikke finde nogen sag med id'et ${chalk.bold(args.id)}
       argName: ['issue'],
     })({ issue })
 
-    const prBody = await askPullRequestBody(defaultPrBody)
+    const prBody = defaultPrBody // await askPullRequestBody(defaultPrBody)
 
     // Submit
 
@@ -256,7 +273,7 @@ ${chalk.yellow('!')} Kunne ikke finde nogen sag med id'et ${chalk.bold(args.id)}
       } else {
         this.spinner.succeed(
           format(
-            'Issue %s already has status %s',
+            'Skipped transition. Issue %s is already in %s',
             chalk.cyan(issue.key),
             chalk.cyan(transition.name),
           ),
@@ -303,9 +320,7 @@ ${chalk.yellow('!')} Kunne ikke finde nogen sag med id'et ${chalk.bold(args.id)}
     console.log()
 
     if (isReadyForWork) {
-      console.log(
-        format("You're ready to start working on %s", chalk.cyan(issue.key)),
-      )
+      console.log(chalk.green('You can now start working on your issue.'))
     } else {
       let message = `${chalk.yellow('!')} Something went wrong.`
       if (!flags.verbose) {
@@ -317,5 +332,7 @@ ${chalk.yellow('!')} Kunne ikke finde nogen sag med id'et ${chalk.bold(args.id)}
 
       console.log(message)
     }
+
+    console.log()
   }
 }

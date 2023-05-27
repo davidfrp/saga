@@ -59,6 +59,7 @@ export type Issue = {
   assignee?: User
   type: {
     name: string
+    color?: string
   }
   status: {
     name: string

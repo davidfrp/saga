@@ -95,7 +95,13 @@ export default class End extends AuthenticatedCommand {
     )
     try {
       await atlassianService.transitionIssue(issue.key, transition.id)
-      this.spinner.succeed()
+      this.spinner.succeed(
+        format(
+          'Transitioned %s to %s',
+          chalk.cyan(issue.key),
+          chalk.cyan(transition.name),
+        ),
+      )
     } catch (_) {
       this.spinner.fail(
         format(

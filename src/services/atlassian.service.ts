@@ -101,6 +101,12 @@ export default class AtlassianService {
     return `https://${this.jiraHostname}/browse/${issueKey}`
   }
 
+  private async getIssueTypeColor(iconUrl: string) {
+    const response = await got(iconUrl)
+    const color = response.body.match(/fill="#(\w{6})"/)?.[1]
+    return color ? `#${color}` : undefined
+  }
+
   private async formatIssueFromResponse(
     issue: SearchIssueResponse,
   ): Promise<Issue> {
@@ -115,6 +121,7 @@ export default class AtlassianService {
       },
       type: {
         name: issue.fields.issuetype.name,
+        color: await this.getIssueTypeColor(issue.fields.issuetype.iconUrl),
       },
       status: {
         name: issue.fields.status.name,

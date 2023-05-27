@@ -1,5 +1,6 @@
 import { prompt, registerPrompt } from 'inquirer'
 import * as inquirerPrompt from 'inquirer-autocomplete-prompt'
+import * as chalk from 'chalk'
 import { getSourceFn } from './helpers'
 import { Issue } from '../@types/atlassian'
 
@@ -13,8 +14,13 @@ export default async function (issues: Issue[]): Promise<Issue> {
       source: getSourceFn(issues, {
         columns: [
           'key',
-          (issue) => issue.type.name,
+          (issue) => {
+            return issue.type.color
+              ? chalk.hex(issue.type.color)(issue.type.name)
+              : issue.type.name
+          },
           (issue) => issue.status.name,
+          (issue) => issue.assignee?.displayName || '',
           'summary',
         ],
         columnSpacing: 2,
