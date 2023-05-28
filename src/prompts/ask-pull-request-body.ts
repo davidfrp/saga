@@ -5,7 +5,7 @@ export default async function (defaultValue: string): Promise<string> {
   const { useDefaultBody } = await prompt({
     type: 'confirm',
     name: 'useDefaultBody',
-    message: 'Vil du bruge standardbeskrivelsen?',
+    message: 'Want to use the default body?',
   })
 
   let body = defaultValue

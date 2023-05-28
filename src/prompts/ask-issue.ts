@@ -10,7 +10,7 @@ export default async function (issues: Issue[]): Promise<Issue> {
     {
       type: 'autocomplete',
       name: 'issue',
-      message: 'Hvilken sag vil du arbejde på?',
+      message: 'Select an issue',
       source: getSourceFn(issues, {
         columns: [
           'key',
@@ -20,7 +20,6 @@ export default async function (issues: Issue[]): Promise<Issue> {
               : issue.type.name
           },
           (issue) => issue.status.name,
-          (issue) => issue.assignee?.displayName || '',
           'summary',
         ],
         columnSpacing: 2,

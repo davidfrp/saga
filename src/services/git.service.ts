@@ -1,5 +1,4 @@
 import { exec, config as shelljsConfig } from 'shelljs'
-import * as chalk from 'chalk'
 
 export type CreatePullRequestOptions = {
   isDraft?: boolean
@@ -69,28 +68,20 @@ export type GitServiceOptions = {
 
 export default class GitService {
   constructor(options?: GitServiceOptions) {
-    shelljsConfig.silent = !Boolean(options?.verbose)
+    shelljsConfig.silent = !options?.verbose
     shelljsConfig.verbose = Boolean(options?.verbose)
 
     if (!this.isGitInstalled())
-      throw new Error(
-        `Git er ikke installeret.
-For at installere Git, følg instruktionerne på https://git-scm.com/book/en/v2/Getting-Started-Installing-Git`,
-      )
+      throw new Error('Git is not installed')
+
+    if (!this.isInGitRepository())
+      throw new Error('Not in a git repository')
 
     if (!this.isGitHubCliInstalled())
-      throw new Error(
-        `GitHub CLI er ikke installeret.
-For at installere GitHub CLI, følg instruktionerne på https://cli.github.com/manual/installation`,
-      )
+      throw new Error('GitHub CLI is not installed')
 
     if (!this.isGitHubCliAuthenticated())
-      throw new Error(
-        `Det kan ikke bekræftes at du er logget ind på GitHub.
-Tjek at du har forbindelse til internettet og er logget ind ved at køre kommandoen ${chalk.bold(
-          'gh auth status',
-        )}`,
-      )
+      throw new Error('GitHub CLI is not authenticated')
   }
 
   private isGitInstalled(): boolean {
@@ -107,6 +98,11 @@ Tjek at du har forbindelse til internettet og er logget ind ved at køre kommand
 
   private isGitHubCliAuthenticated(): boolean {
     const { code } = exec('gh auth status')
+    return code === 0
+  }
+
+  private isInGitRepository(): boolean {
+    const { code } = exec('git rev-parse --is-inside-work-tree')
     return code === 0
   }
 
@@ -130,7 +126,11 @@ Tjek at du har forbindelse til internettet og er logget ind ved at køre kommand
 
     const openPrExists = Boolean(
       data.find(
-        (pr: any) =>
+        (pr: {
+          baseRefName: string
+          headRefName: string
+          state: string
+        }) =>
           pr.baseRefName === base &&
           pr.headRefName === head &&
           pr.state === 'OPEN',
@@ -145,7 +145,7 @@ Tjek at du har forbindelse til internettet og er logget ind ved at køre kommand
     body: string,
     options: CreatePullRequestOptions,
   ): Promise<void> {
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const branch = options.sourceBranch || this.getCurrentBranch()
 
       const baseBranch = options.targetBranch || branch
@@ -157,13 +157,11 @@ Tjek at du har forbindelse til internettet og er logget ind ved at køre kommand
         this.push()
       }
 
-      const command = `gh pr create --title "${title}" --body "${body}" ${
-        options.isDraft ? '--draft' : ''
-      } --base ${baseBranch} --head ${branch} ${
-        reviewers.length > 0
+      const command = `gh pr create --title "${title}" --body "${body}" ${options.isDraft ? '--draft' : ''
+        } --base ${baseBranch} --head ${branch} ${reviewers.length > 0
           ? `--reviewer ${reviewers.join(' --reviewer ')}`
           : ''
-      }`
+        }`
 
       exec(command, (_, output, error) => {
         if (options.isDraft && error.toLowerCase().includes('draft')) {

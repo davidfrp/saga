@@ -6,11 +6,11 @@ export default async function (
 ): Promise<string> {
   const { pullRequestTitle } = await prompt({
     name: 'pullRequestTitle',
-    message: 'Hvad skal være titlen for din pull request?',
+    message: 'Pull request title',
     default: defaultValue,
     validate: (value: string) =>
       (validationPattern?.test(value) ?? true) ||
-      'Du skal skrive en gyldig pull request titel',
+      'You need to enter a valid pull request title',
   })
 
   return pullRequestTitle

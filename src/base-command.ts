@@ -4,7 +4,6 @@ import { Store } from './store'
 import * as chalk from 'chalk'
 import * as ora from 'ora'
 
-// TODO Make these non-optional.
 export interface StoreKeys {
   email?: string
   jiraHostname?: string
@@ -132,5 +131,10 @@ export default abstract class BaseCommand extends Command {
     }
 
     exec(command, { silent: true })
+  }
+
+  protected async catch(error: Error) {
+    console.error(`${chalk.red('✗')} ${error.message}`)
+    this.exit(1)
   }
 }

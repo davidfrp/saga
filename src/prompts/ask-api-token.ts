@@ -11,7 +11,7 @@ https://id.atlassian.com/manage-profile/security/api-tokens
     type: 'password',
     mask: '*',
     name: 'token',
-    message: 'Indsæt dit Atlassian API-token',
+    message: 'Insert your Atlassian API-token',
   })
 
   return token

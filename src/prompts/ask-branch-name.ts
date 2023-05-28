@@ -8,7 +8,7 @@ export default async function (
 ): Promise<string> {
   const { branchName } = await prompt({
     name: 'branchName',
-    message: 'Hvad skal din nye branch hedde?',
+    message: 'Enter a branch name',
     default: defaultValue,
     validate: validationFn,
   })

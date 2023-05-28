@@ -15,9 +15,9 @@ function isUrlValid(value: string): boolean {
 export default async function (): Promise<string> {
   const { jiraHostname } = await prompt({
     name: 'jiraHostname',
-    message: 'Skriv dit Jira hostnavn (fx. dit-domæne.atlassian.net)',
+    message: 'Enter your Jira host name (fx. your-domain.atlassian.net)',
     validate: (value: string) =>
-      isUrlValid(value) || 'Du skal skrive et gyldigt Jira hostnavn',
+      isUrlValid(value) || 'You need to enter a valid Jira host name',
   })
 
   return jiraHostname

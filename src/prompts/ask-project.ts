@@ -9,7 +9,7 @@ export default async function (projects: Project[]): Promise<Project> {
     {
       type: 'autocomplete',
       name: 'project',
-      message: 'Hvilket projekt arbejder du på?',
+      message: 'Select your project',
       source: getSourceFn(projects, {
         columns: ['key', 'name'],
       }),

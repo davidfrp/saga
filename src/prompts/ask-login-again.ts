@@ -4,7 +4,7 @@ export default async function (): Promise<boolean> {
   const { shouldLoginAgain } = await prompt({
     type: 'confirm',
     name: 'shouldLoginAgain',
-    message: 'Du er allerede logget ind. Vil du overskrive og logge ind på ny?',
+    message: 'You are already logged in. Do you want to log in anew?',
   })
 
   return shouldLoginAgain

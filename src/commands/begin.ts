@@ -1,6 +1,6 @@
 import * as chalk from 'chalk'
 import * as doT from 'dot'
-import { Args, Flags, ux } from '@oclif/core'
+import { Args, Flags } from '@oclif/core'
 import { AuthenticatedCommand } from '..'
 import { AtlassianService, GitService } from '../services'
 import { Issue, IssueTransition, StatusCategory } from '../@types/atlassian'
@@ -10,7 +10,6 @@ import {
   askBranchName,
   askPullRequestTitle,
   askIssueTransitionTo,
-  askPullRequestBody,
   askBaseBranch,
 } from '../prompts'
 import { format } from 'util'
@@ -22,8 +21,6 @@ export default class Begin extends AuthenticatedCommand {
     id: Args.string({ description: 'Id or key of the issue to work on' }),
   }
 
-  // TODO Add --dry-run, -n flag. This will allow the user to see what will happen without actually doing it.
-  // TODO Add --base, -B flag. This will allow the user to select a different base branch than the one stored in the config.
   static flags = {
     project: Flags.boolean({
       char: 'p',
@@ -48,12 +45,7 @@ export default class Begin extends AuthenticatedCommand {
     })
 
     if (git.hasUncommittedChanges()) {
-      console.error(
-        `${chalk.red(
-          '✗',
-        )} Commit eller stash dine nuværende ændringer før du påbegynder arbejde på en sag.`,
-      )
-      this.exit(1)
+      throw new Error('Stash or commit your changes before beginning a saga.')
     }
 
     const atlassianService = new AtlassianService({
@@ -72,7 +64,7 @@ export default class Begin extends AuthenticatedCommand {
       if (projects.length === 1) {
         projectKey = projects[0].key
         console.log(
-          `\n${chalk.yellow('!')} ${format(
+          `${chalk.yellow('!')} ${format(
             'Using %s as project since there are no other projects to choose from.',
             chalk.cyan(projectKey),
           )}`,
@@ -84,9 +76,9 @@ export default class Begin extends AuthenticatedCommand {
 
       this.store.set('project', projectKey)
 
-      if (!flags.project) {
+      if (!flags.project && projects.length > 1) {
         console.log(
-          `\n${format(
+          `${format(
             'You can change your project at any time by adding the %s flag',
             chalk.bold('--project'),
           )}`,
@@ -104,15 +96,13 @@ export default class Begin extends AuthenticatedCommand {
 
       if (!issue) {
         console.warn(
-          `\n${chalk.yellow('!')} ${format(
+          `${chalk.yellow('!')} ${format(
             'Unable to find an issue with id %s',
             chalk.cyan(args.id),
           )}`,
         )
       }
     }
-
-    console.log()
 
     if (!issue) {
       const jql = `

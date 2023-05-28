@@ -9,7 +9,6 @@ import { IssueTransition, StatusCategory } from '../@types/atlassian'
 export default class End extends AuthenticatedCommand {
   static summary = 'Mark an issue as ready for review'
 
-  // TODO add --verbose -v flag.
   // TODO add --reviewer -r flag.
   static flags = {
     web: Flags.boolean({
@@ -23,12 +22,19 @@ export default class End extends AuthenticatedCommand {
       description: "Undo the 'mark as ready' action",
       default: false,
     }),
+    verbose: Flags.boolean({
+      char: 'v',
+      description:
+        'Show more information about the process, useful for debugging',
+    }),
   }
 
   async run(): Promise<void> {
     const { flags } = await this.parse(End)
 
-    const git = new GitService()
+    const git = new GitService({
+      verbose: flags.verbose,
+    })
 
     const pullRequestExist = git.doesPullRequestExist()
     if (!pullRequestExist) {

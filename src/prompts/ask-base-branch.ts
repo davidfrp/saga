@@ -8,7 +8,7 @@ export default async function (branches: string[]): Promise<string> {
     {
       type: 'autocomplete',
       name: 'baseBranch',
-      message: 'Vælg base branch',
+      message: 'Choose a base branch',
       source: getSourceFn(branches),
     },
   ])
