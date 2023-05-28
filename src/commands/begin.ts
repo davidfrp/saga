@@ -179,10 +179,10 @@ export default class Begin extends AuthenticatedCommand {
         }
 
         console.log(
-          `\n${chalk.yellow('!')} ${format(
+          `${chalk.yellow('!')} ${format(
             'Using %s as base branch since there are no other branches to choose from.',
             chalk.cyan(baseBranch),
-          )}\n`,
+          )}`,
         )
       }
     }
