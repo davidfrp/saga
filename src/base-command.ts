@@ -3,6 +3,8 @@ import { exec } from 'shelljs'
 import { Store } from './store'
 import * as chalk from 'chalk'
 import * as ora from 'ora'
+import { CommandError } from '@oclif/core/lib/interfaces'
+import { ExitError } from '@oclif/core/lib/errors'
 
 export interface StoreKeys {
   email?: string
@@ -16,6 +18,7 @@ export interface StoreKeys {
   prTitleTemplate?: string
   prTitlePattern?: string
   prBodyTemplate?: string
+  emptyCommitMessageTemplate?: string
 }
 
 export interface AuthStoreKeys {
@@ -77,6 +80,12 @@ const store = new Store<StoreKeys, AuthStoreKeys>(
         'Template used to generate default pull request bodies. Uses the doT template engine.',
       defaultValue: '[{{=issue.key}}]({{=issue.url}})',
     },
+    {
+      key: 'emptyCommitMessageTemplate',
+      description:
+        'Template used to generate default empty commit messages. Uses the doT template engine.',
+      defaultValue: 'chore: creating pull request',
+    }
   ],
   [
     {
@@ -133,8 +142,9 @@ export default abstract class BaseCommand extends Command {
     exec(command, { silent: true })
   }
 
-  protected async catch(error: Error) {
+  protected async catch(error: CommandError) {
+    if (error instanceof ExitError) return
+
     console.error(`${chalk.red('✗')} ${error.message}`)
-    this.exit(1)
   }
 }
