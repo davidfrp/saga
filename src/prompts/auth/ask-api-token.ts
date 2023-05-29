@@ -2,8 +2,8 @@ import { prompt } from 'inquirer'
 
 export default async function (): Promise<string> {
   console.log(`
-For at kunne se dine opgaver, skal du have et Atlassian API-token.
-Hvis du ikke allerede har et, kan du oprette et her:
+To be able to see your issues, you need an Atlassian API-token.
+If you don't already have one, you can create one here:
 https://id.atlassian.com/manage-profile/security/api-tokens
 `)
 
