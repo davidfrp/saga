@@ -11,6 +11,7 @@ import {
   askPullRequestTitle,
   askIssueTransitionTo,
   askBaseBranch,
+  askOptions,
 } from '../../prompts'
 import { format } from 'util'
 
@@ -161,14 +162,17 @@ export default class Start extends AuthenticatedCommand {
       return true
     })
 
+    await git.fetch({ prune: true })
+
     const popularBaseBranches = git.getPopularBaseBranches()
+    const remoteBranches = git.getRemoteBranches()
 
     const baseBranches = [
-      ...new Set([...popularBaseBranches, ...git.getRemoteBranches()]),
-    ]
+      ...new Set([...popularBaseBranches, ...remoteBranches]),
+    ].filter((branch) => remoteBranches.includes(branch))
 
     let baseBranch = this.store.get('baseBranch')
-    if (!baseBranch) {
+    if (!baseBranch || !baseBranches.includes(baseBranch)) {
       if (baseBranches.length > 1) {
         baseBranch = await askBaseBranch(baseBranches)
       } else {
@@ -216,7 +220,8 @@ export default class Start extends AuthenticatedCommand {
 
     const prBody = defaultPrBody // await askPullRequestBody(defaultPrBody)
 
-    const commitMessage = this.store.get('emptyCommitMessageTemplate') || pullRequestTitle
+    const commitMessage =
+      this.store.get('emptyCommitMessageTemplate') || pullRequestTitle
 
     // Submit
 
@@ -226,6 +231,7 @@ export default class Start extends AuthenticatedCommand {
 
     this.spinner.start(format('Switching branch to %s', chalk.cyan(branch)))
 
+    await git.fetch({ prune: true })
     await git.checkoutBranch(baseBranch)
     await git.pull()
     await git.createBranch(branch)
@@ -290,15 +296,15 @@ export default class Start extends AuthenticatedCommand {
           chalk.cyan(baseBranch),
         ),
       )
+
       await git.createPullRequest(pullRequestTitle, prBody, {
         sourceBranch: branch,
         targetBranch: baseBranch,
         commitMessage,
         isDraft: true,
       })
-      const prUrl = await git.getPullRequestUrl()
-      this.spinner.succeed(format('Created pull request %s', prUrl))
-      if (flags.web) this.open(prUrl)
+
+      this.spinner.succeed('Created pull request')
     } catch (error) {
       isReadyForWork = false
       this.spinner.fail(
@@ -313,7 +319,32 @@ export default class Start extends AuthenticatedCommand {
     console.log()
 
     if (isReadyForWork) {
-      console.log(chalk.green('You can now start working on your issue.'))
+      enum OptionMessages {
+        Skip = 'Skip',
+        OpenIssue = 'Open issue in browser',
+        OpenPullRequest = 'Open pull request in browser',
+        OpenBoth = 'Open issue and pull request in browser',
+      }
+
+      const choice = await askOptions("What's next?", [
+        OptionMessages.Skip,
+        OptionMessages.OpenIssue,
+        OptionMessages.OpenPullRequest,
+        OptionMessages.OpenBoth,
+      ])
+
+      switch (choice) {
+        case OptionMessages.OpenIssue:
+          this.open(issue.url)
+          break
+        case OptionMessages.OpenPullRequest:
+          this.open(await git.getPullRequestUrl())
+          break
+        case OptionMessages.OpenBoth:
+          this.open(issue.url)
+          this.open(await git.getPullRequestUrl())
+          break
+      }
     } else {
       let message = `${chalk.yellow('!')} Something went wrong.`
       if (!flags.verbose) {

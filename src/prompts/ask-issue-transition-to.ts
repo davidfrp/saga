@@ -11,7 +11,7 @@ export default async function (
     {
       type: 'autocomplete',
       name: 'transitionTo',
-      message: 'Select issue status',
+      message: 'Select new issue status',
       source: getSourceFn(transitions, {
         columns: ['name'],
       }),

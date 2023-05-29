@@ -72,11 +72,9 @@ export default class GitService {
     shelljsConfig.silent = !options?.verbose
     shelljsConfig.verbose = Boolean(options?.verbose)
 
-    if (!this.isGitInstalled())
-      throw new Error('Git is not installed')
+    if (!this.isGitInstalled()) throw new Error('Git is not installed')
 
-    if (!this.isInGitRepository())
-      throw new Error('Not in a git repository')
+    if (!this.isInGitRepository()) throw new Error('Not in a git repository')
 
     if (!this.isGitHubCliInstalled())
       throw new Error('GitHub CLI is not installed')
@@ -127,11 +125,7 @@ export default class GitService {
 
     const openPrExists = Boolean(
       data.find(
-        (pr: {
-          baseRefName: string
-          headRefName: string
-          state: string
-        }) =>
+        (pr: { baseRefName: string; headRefName: string; state: string }) =>
           pr.baseRefName === base &&
           pr.headRefName === head &&
           pr.state === 'OPEN',
@@ -158,11 +152,13 @@ export default class GitService {
         this.push()
       }
 
-      const command = `gh pr create --title "${title}" --body "${body}" ${options.isDraft ? '--draft' : ''
-        } --base ${baseBranch} --head ${branch} ${reviewers.length > 0
+      const command = `gh pr create --title "${title}" --body "${body}" ${
+        options.isDraft ? '--draft' : ''
+      } --base ${baseBranch} --head ${branch} ${
+        reviewers.length > 0
           ? `--reviewer ${reviewers.join(' --reviewer ')}`
           : ''
-        }`
+      }`
 
       exec(command, (code, _, error) => {
         if (options.isDraft && error.toLowerCase().includes('draft')) {
@@ -220,8 +216,8 @@ export default class GitService {
     return branches
   }
 
-  fetch(): void {
-    exec('git fetch')
+  async fetch({ prune }: { prune: boolean }): Promise<void> {
+    await execAsync(`git fetch ${prune ? '--prune' : ''}`)
   }
 
   async checkoutBranch(branch: string): Promise<void> {

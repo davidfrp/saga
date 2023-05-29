@@ -65,8 +65,8 @@ export const getSourceFn = <T extends Record<string, unknown> | string>(
     columnExtractors
       ? columnExtractors.map((extractor) => sanitizeValue(extractor(item)))
       : Object.values(item).map((value) =>
-        typeof value === 'string' ? sanitizeValue(value) : '',
-      )
+          typeof value === 'string' ? sanitizeValue(value) : '',
+        )
 
   const createRows = (items: T[]): SourceRow<T>[] => {
     const valuesOfItems = items.map((item) => extractValues(item))
@@ -109,8 +109,8 @@ export const getSourceFn = <T extends Record<string, unknown> | string>(
       values.map((value, index) =>
         value.padEnd(
           columnWidths[index] +
-          value.length -
-          sanitizeOfAnsiCodes(value).length,
+            value.length -
+            sanitizeOfAnsiCodes(value).length,
         ),
       ),
     )
@@ -128,12 +128,16 @@ export const getSourceFn = <T extends Record<string, unknown> | string>(
 
     if (!input) return rows
 
-    const results = fuzzysort.go(input, rows.map(({ name }) => name), { limit: 10 })
+    const results = fuzzysort.go(
+      input,
+      rows.map(({ name }) => name),
+      { limit: 10 },
+    )
 
     if (results.total === 0) return []
 
-    return results.map(({ target }) => rows.find(
-      ({ name }) => name === target) as SourceRow<T>
+    return results.map(
+      ({ target }) => rows.find(({ name }) => name === target) as SourceRow<T>,
     )
   }
 

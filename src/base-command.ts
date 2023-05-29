@@ -85,7 +85,7 @@ const store = new Store<StoreKeys, AuthStoreKeys>(
       description:
         'Template used to generate default empty commit messages. Uses the doT template engine.',
       defaultValue: 'chore: creating pull request',
-    }
+    },
   ],
   [
     {
@@ -142,9 +142,9 @@ export default abstract class BaseCommand extends Command {
     exec(command, { silent: true })
   }
 
-  protected async catch(error: CommandError) {
-    if (error instanceof ExitError) return
+  // protected async catch(error: CommandError) {
+  //   if (error instanceof ExitError) return
 
-    console.error(`${chalk.red('✗')} ${error.message}`)
-  }
+  //   console.error(`${chalk.red('✗')} ${error.message}`)
+  // }
 }
