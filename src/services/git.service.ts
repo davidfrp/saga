@@ -1,8 +1,9 @@
 import { exec, config as shelljsConfig } from 'shelljs'
 
 export type CreatePullRequestOptions = {
-  isDraft?: boolean
+  commitMessage: string
   pushEmptyCommit?: boolean
+  isDraft?: boolean
   sourceBranch?: string
   targetBranch?: string
   reviewers?: string[]
@@ -153,7 +154,7 @@ export default class GitService {
       const reviewers = options.reviewers || []
 
       if (options.isDraft) {
-        this.commit('chore: creating pull request', { allowEmpty: true })
+        this.commit(options.commitMessage, { allowEmpty: true })
         this.push()
       }
 
@@ -163,7 +164,7 @@ export default class GitService {
           : ''
         }`
 
-      exec(command, (_, output, error) => {
+      exec(command, (code, _, error) => {
         if (options.isDraft && error.toLowerCase().includes('draft')) {
           resolve(
             this.createPullRequest(title, body, {
@@ -174,9 +175,7 @@ export default class GitService {
           return
         }
 
-        const url = this.getPullRequestUrlInText(output)
-
-        if (!url) {
+        if (code !== 0) {
           reject(new Error('Failed to create pull request'))
           return
         }
