@@ -1,9 +1,9 @@
 import * as chalk from 'chalk'
 import * as doT from 'dot'
 import { Args, Flags } from '@oclif/core'
-import { AuthenticatedCommand } from '..'
-import { AtlassianService, GitService } from '../services'
-import { Issue, IssueTransition, StatusCategory } from '../@types/atlassian'
+import { AuthenticatedCommand } from '../..'
+import { AtlassianService, GitService } from '../../services'
+import { Issue, IssueTransition, StatusCategory } from '../../@types/atlassian'
 import {
   askProject,
   askIssue,
@@ -11,10 +11,10 @@ import {
   askPullRequestTitle,
   askIssueTransitionTo,
   askBaseBranch,
-} from '../prompts'
+} from '../../prompts'
 import { format } from 'util'
 
-export default class Begin extends AuthenticatedCommand {
+export default class Start extends AuthenticatedCommand {
   static summary = 'Start working on an issue'
 
   static args = {
@@ -38,14 +38,14 @@ export default class Begin extends AuthenticatedCommand {
   }
 
   async run(): Promise<void> {
-    const { args, flags } = await this.parse(Begin)
+    const { args, flags } = await this.parse(Start)
 
     const git = new GitService({
       verbose: flags.verbose,
     })
 
     if (git.hasUncommittedChanges()) {
-      throw new Error('Stash or commit your changes before beginning a saga.')
+      throw new Error('Stash or commit your changes before starting an issue.')
     }
 
     const atlassianService = new AtlassianService({
@@ -216,6 +216,8 @@ export default class Begin extends AuthenticatedCommand {
 
     const prBody = defaultPrBody // await askPullRequestBody(defaultPrBody)
 
+    const commitMessage = this.store.get('emptyCommitMessageTemplate') || pullRequestTitle
+
     // Submit
 
     let isReadyForWork = true
@@ -291,6 +293,7 @@ export default class Begin extends AuthenticatedCommand {
       await git.createPullRequest(pullRequestTitle, prBody, {
         sourceBranch: branch,
         targetBranch: baseBranch,
+        commitMessage,
         isDraft: true,
       })
       const prUrl = await git.getPullRequestUrl()
