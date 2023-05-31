@@ -7,6 +7,7 @@ export default class Logout extends BaseCommand {
   static args = {}
 
   async run(): Promise<void> {
+    this.store.remove('project')
     this.store.remove('email')
     this.store.remove('jiraHostname')
     await this.store.authentication.remove('atlassianApiToken')
@@ -14,7 +15,7 @@ export default class Logout extends BaseCommand {
     console.log(
       `${chalk.green(
         '✓',
-      )} Dine loginoplysninger er blevet fjernet fra konfiguration og hovednøglering.`,
+      )} Your login credentials have been removed from config and keychain.`,
     )
   }
 }
