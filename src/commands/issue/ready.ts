@@ -1,7 +1,7 @@
 import { Flags } from '@oclif/core'
 import { AuthenticatedCommand } from '../..'
 import { AtlassianService, GitService } from '../../services'
-import { askIssueTransitionTo } from '../../prompts'
+import { askIssueTransitionTo, askOptions } from '../../prompts'
 import * as chalk from 'chalk'
 import { format } from 'util'
 import { IssueTransition, StatusCategory } from '../../@types/atlassian'
@@ -10,18 +10,8 @@ export default class Ready extends AuthenticatedCommand {
   static summary = 'Mark an issue as ready for review'
 
   // TODO add --reviewer -r flag.
+  // TODO add --undo flag.
   static flags = {
-    web: Flags.boolean({
-      relationships: [{ flags: ['undo'], type: 'none' }],
-      description: 'Open the pull request in your browser',
-      default: false,
-      char: 'w',
-    }),
-    undo: Flags.boolean({
-      relationships: [{ flags: ['web'], type: 'none' }],
-      description: "Undo the 'mark as ready' action",
-      default: false,
-    }),
     verbose: Flags.boolean({
       char: 'v',
       description:
@@ -87,10 +77,10 @@ export default class Ready extends AuthenticatedCommand {
 
     if (!transition) {
       transition = await askIssueTransitionTo(filteredTransitions)
-
-      // TODO ask if the user wants to save this as the default transition
       this.store.set('readyForReviewStatus', transition.name)
     }
+
+    let isReadyForReview = true
 
     this.spinner.start(
       format(
@@ -100,15 +90,27 @@ export default class Ready extends AuthenticatedCommand {
       ),
     )
     try {
-      await atlassianService.transitionIssue(issue.key, transition.id)
-      this.spinner.succeed(
-        format(
-          'Transitioned %s to %s',
-          chalk.cyan(issue.key),
-          chalk.cyan(transition.name),
-        ),
-      )
+      if (issue.status.name !== transition.name) {
+        await atlassianService.transitionIssue(issue.key, transition.id)
+        this.spinner.succeed(
+          format(
+            'Transitioned issue %s from %s to %s',
+            chalk.cyan(issue.key),
+            chalk.cyan(issue.status.name),
+            chalk.cyan(transition.name),
+          ),
+        )
+      } else {
+        this.spinner.succeed(
+          format(
+            'Skipped transition. Issue %s is already in %s',
+            chalk.cyan(issue.key),
+            chalk.cyan(transition.name),
+          ),
+        )
+      }
     } catch (_) {
+      isReadyForReview = false
       this.spinner.fail(
         format(
           'Could not transition %s to %s',
@@ -123,9 +125,41 @@ export default class Ready extends AuthenticatedCommand {
       git.markAsReady()
       this.spinner.succeed('Marked pull request as ready for review')
     } catch (_) {
+      isReadyForReview = false
       this.spinner.fail('Could not mark pull request as ready for review')
     }
 
-    if (flags.web) git.viewPullRequestOnWeb()
+    if (isReadyForReview) {
+      console.log()
+
+      enum OptionMessages {
+        Skip = 'Skip',
+        OpenIssue = 'Open issue in browser',
+        OpenPullRequest = 'Open pull request in browser',
+        OpenBoth = 'Open issue and pull request in browser',
+      }
+
+      const choice = await askOptions("What's next?", [
+        OptionMessages.Skip,
+        OptionMessages.OpenIssue,
+        OptionMessages.OpenPullRequest,
+        OptionMessages.OpenBoth,
+      ])
+
+      switch (choice) {
+        case OptionMessages.OpenIssue:
+          this.open(issue.url)
+          break
+        case OptionMessages.OpenPullRequest:
+          this.open(await git.getPullRequestUrl())
+          break
+        case OptionMessages.OpenBoth:
+          this.open(issue.url)
+          this.open(await git.getPullRequestUrl())
+          break
+      }
+    }
+
+    console.log()
   }
 }
