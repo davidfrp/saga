@@ -15,23 +15,22 @@ export default class Get extends BaseCommand {
   async run(): Promise<void> {
     const { args } = await this.parse(Get)
 
-    const options = this.store.options.find((option) => option.key === args.key)
+    const keyExist = Boolean(
+      this.store.options.find((option) => option.key === args.key),
+    )
 
-    if (!options) {
+    if (!keyExist) {
       this.error(`Could not find key '${args.key}'`)
     }
 
     if (!args.value) args.value = ""
 
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       this.store.set(args.key as any, args.value)
     } catch (_) {
-      try {
-        await this.store.secrets.set(args.key as any, args.value)
-      } catch (_) {
-        console.log(`Could not set key '${args.key}'`)
-        this.exit(1)
-      }
+      console.log(`Could not set key '${args.key}'`)
+      this.exit(1)
     }
   }
 }

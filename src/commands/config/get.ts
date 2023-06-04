@@ -18,17 +18,10 @@ export default class Get extends BaseCommand {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       value = this.store.get(args.key as any)
     } catch (_) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        value = await this.store.secrets.get(args.key as any)
-      } catch (_) {
-        console.log(`Could not find key '${args.key}'`)
-        this.exit(1)
-      }
+      console.log(`Could not find key '${args.key}'`)
+      this.exit(1)
     }
 
-    if (value !== "") console.log(value)
-
-    // No output if value is empty string.
+    if (value) console.log(value)
   }
 }
