@@ -13,7 +13,7 @@ export abstract class AuthenticatedCommand extends BaseCommand {
     if (!hasAllCredentials) {
       console.log(
         `\n${chalk.yellow("!")} ${format(
-          "This command requires you to be logged in.\nRun %s to log in.",
+          "This command requires you to be logged in.\n  Run %s to log in.",
           chalk.bold(`${this.config.bin} auth login`),
         )}\n`,
       )
