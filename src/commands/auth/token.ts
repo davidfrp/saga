@@ -1,17 +1,13 @@
-import { AuthenticatedCommand } from '../..'
-import * as chalk from 'chalk'
+import chalk from "chalk"
+import { AuthenticatedCommand } from "../../authenticatedCommand.js"
 
 export default class Status extends AuthenticatedCommand {
   async run(): Promise<void> {
-    const atlassianApiToken = await this.store.authentication.get(
-      'atlassianApiToken',
-    )
+    const atlassianApiToken = await this.store.secrets.get("atlassianApiToken")
 
     if (!atlassianApiToken) {
       console.log(
-        `${chalk.red(
-          '✗',
-        )} Dit Atlassian API-token blevet ikke fundet i hovednøglering.`,
+        `${chalk.red("✗")} Your Atlassian API-token was not found in keychain.`,
       )
       this.exit(1)
     }

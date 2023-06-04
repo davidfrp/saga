@@ -1,87 +1,92 @@
-import * as chalk from 'chalk'
-import * as doT from 'dot'
-import { Args, Flags } from '@oclif/core'
-import { AuthenticatedCommand } from '../..'
-import { AtlassianService, GitService } from '../../services'
-import { Issue, IssueTransition, StatusCategory } from '../../@types/atlassian'
+import { format } from "util"
+import { Args, Flags } from "@oclif/core"
+import JiraApi from "jira-client"
+import chalk from "chalk"
+import doT from "dot"
+import { AuthenticatedCommand } from "../../authenticatedCommand.js"
+import GitService from "../../services/gitService.js"
+import {
+  Issue,
+  Project,
+  StatusCategory,
+  Transition,
+} from "../../@types/atlassian.js"
 import {
   askProject,
   askIssue,
+  askTransition,
   askBranchName,
-  askPullRequestTitle,
-  askIssueTransitionTo,
   askBaseBranch,
-  askOptions,
-} from '../../prompts'
-import { format } from 'util'
+  askPrTitle,
+  askChoice,
+} from "../../prompts/index.js"
 
 export default class Start extends AuthenticatedCommand {
-  static summary = 'Start working on an issue'
+  static summary = "Start working on an issue"
 
   static args = {
-    id: Args.string({ description: 'Id or key of the issue to work on' }),
+    id: Args.string({ description: "Id or key of the issue to work on" }),
   }
 
   static flags = {
     project: Flags.boolean({
-      char: 'p',
-      description: 'Select a different project',
+      char: "p",
+      description: "Select a different project",
     }),
-    web: Flags.boolean({
-      char: 'w',
-      description: 'Opens the pull request in your browser after creation',
-    }),
-    verbose: Flags.boolean({
-      char: 'v',
+    debug: Flags.boolean({
       description:
-        'Show more information about the process, useful for debugging',
+        "Show more information about the process, useful for debugging",
     }),
   }
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(Start)
 
-    const git = new GitService({
-      verbose: flags.verbose,
-    })
+    const git = await new GitService({
+      debug: flags.debug,
+    }).checkRequirements()
 
-    if (git.hasUncommittedChanges()) {
-      throw new Error('Stash or commit your changes before starting an issue.')
+    if (await git.hasUncommittedChanges()) {
+      throw new Error("Stash or commit your changes before starting an issue.")
     }
 
-    const atlassianService = new AtlassianService({
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      email: this.store.get('email')!,
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      jiraHostname: this.store.get('jiraHostname')!,
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      token: (await this.store.authentication.get('atlassianApiToken'))!,
+    const host = this.store.get("jiraHostname")
+    const email = this.store.get("email")
+    const token = await this.store.secrets.get("atlassianApiToken")
+
+    const jira = new JiraApi({
+      protocol: "https",
+      host,
+      username: email,
+      password: token,
+      apiVersion: "3",
+      strictSSL: true,
     })
 
-    let projectKey = this.store.get('project')
+    let projectKey = this.store.get("project")
     if (!projectKey || flags.project) {
-      const projects = await atlassianService.getProjects()
+      const projects = await jira.listProjects()
 
       if (projects.length === 1) {
         projectKey = projects[0].key
-        console.log(
-          `${chalk.yellow('!')} ${format(
-            'Using %s as project since there are no other projects to choose from.',
+        this.log(
+          `${chalk.yellow("!")} ${format(
+            "Using %s as project since there are no other projects to choose from.",
             chalk.cyan(projectKey),
           )}`,
         )
       } else {
-        const project = await askProject(projects)
+        const project = await askProject(projects as Project[])
         projectKey = project.key
       }
 
-      this.store.set('project', projectKey)
+      this.store.set("project", projectKey)
 
       if (!flags.project && projects.length > 1) {
-        console.log(
+        this.log(
           `${format(
-            'You can change your project at any time by adding the %s flag',
-            chalk.bold('--project'),
+            "You can change your project at any time by adding the %s flag",
+            chalk.bold("--project"),
           )}`,
         )
       }
@@ -93,12 +98,17 @@ export default class Start extends AuthenticatedCommand {
         args.id = `${projectKey}-${args.id}`
       }
 
-      issue = await atlassianService.searchIssue(args.id)
+      try {
+        const response = await jira.findIssue(args.id)
+        issue = response as Issue
+      } catch (error) {
+        if (flags.debug) console.error(error)
+      }
 
       if (!issue) {
-        console.warn(
-          `${chalk.yellow('!')} ${format(
-            'Unable to find an issue with id %s',
+        this.log(
+          `${chalk.yellow("!")} ${format(
+            "Unable to find an issue with id %s",
             chalk.cyan(args.id),
           )}`,
         )
@@ -111,22 +121,32 @@ export default class Start extends AuthenticatedCommand {
           assignee IN (currentUser()) OR
           assignee IS EMPTY
         ) AND statusCategory IN (
-          ${StatusCategory.ToDo}, 
+          ${StatusCategory.ToDo},
           ${StatusCategory.InProgress}
         ) ORDER BY lastViewed DESC
       `
 
-      const issues = await atlassianService.searchIssuesByJql(jql)
+      let issues: Issue[] = []
+      try {
+        const response = await jira.searchJira(jql)
+        issues = response.issues as Issue[]
+      } catch (error) {
+        if (flags.debug) console.error(error)
+      }
+
       issue = await askIssue(issues)
     }
 
-    const transitions = await atlassianService.getIssueTransitions(issue.key)
+    const response = await jira.listTransitions(issue.key)
+    const transitions = response.transitions as Transition[]
+
     const filteredTransitions = transitions.filter(
-      (transition) => transition.status.category === StatusCategory.InProgress,
+      (transition) =>
+        transition.to.statusCategory.key === StatusCategory.InProgress,
     )
 
-    let transition: IssueTransition | undefined
-    const workingStatus = this.store.get('workingStatus')
+    let transition: Transition | undefined
+    const workingStatus = this.store.get("workingStatus")
     if (workingStatus) {
       transition = filteredTransitions.find(
         (transition) => transition.name === workingStatus,
@@ -134,44 +154,40 @@ export default class Start extends AuthenticatedCommand {
     }
 
     if (!transition) {
-      transition = await askIssueTransitionTo(filteredTransitions)
-      this.store.set('workingStatus', transition.name)
+      transition = await askTransition(filteredTransitions)
+      this.store.set("workingStatus", transition.name)
     }
 
     const branchNamePattern = new RegExp(
-      this.store.get('branchNamePattern') || '(?:)',
+      this.store.get("branchNamePattern") || "(?:)",
     )
-    const branchNameTemplate = this.store.get('branchNameTemplate') || ''
+    const branchNameTemplate = this.store.get("branchNameTemplate") || ""
     const defaultBranchName = doT.template(branchNameTemplate, {
-      argName: ['issue'],
+      argName: ["issue"],
     })({ issue })
 
-    const branch = await askBranchName(defaultBranchName, (input) => {
-      if (!branchNamePattern.test(input)) {
-        return `Navnet passer ikke til mønsteret ${chalk.red(
+    const branch = await askBranchName(defaultBranchName, (value: string) => {
+      if (!branchNamePattern?.test(value)) {
+        return `Your branch name must match the pattern ${chalk.red(
           branchNamePattern,
         )}`
       }
-
-      if (!git.isBranchNameValid(input))
-        return 'Det navn ser ikke ud til at være gyldigt'
-
-      if (git.branchExists(input))
-        return 'En branch med det navn findes allerede'
 
       return true
     })
 
     await git.fetch({ prune: true })
 
-    const popularBaseBranches = git.getPopularBaseBranches()
-    const remoteBranches = git.getRemoteBranches()
+    const [popularBaseBranches, remoteBranches] = await Promise.all([
+      git.getPopularBaseBranches(),
+      git.getRemoteBranches(),
+    ])
 
     const baseBranches = [
       ...new Set([...popularBaseBranches, ...remoteBranches]),
     ].filter((branch) => remoteBranches.includes(branch))
 
-    let baseBranch = this.store.get('baseBranch')
+    let baseBranch = this.store.get("baseBranch")
     if (!baseBranch || !baseBranches.includes(baseBranch)) {
       if (baseBranches.length > 1) {
         baseBranch = await askBaseBranch(baseBranches)
@@ -183,18 +199,18 @@ export default class Start extends AuthenticatedCommand {
         }
 
         console.log(
-          `${chalk.yellow('!')} ${format(
-            'Using %s as base branch since there are no other branches to choose from.',
+          `${chalk.yellow("!")} ${format(
+            "Using %s as base branch since there are no other branches to choose from.",
             chalk.cyan(baseBranch),
           )}`,
         )
       }
     }
 
-    if (git.doesOpenPrExist(branch, baseBranch)) {
+    if (await git.doesOpenPrExist(branch, baseBranch)) {
       console.error(
-        `${chalk.red('✗')} ${format(
-          'An open pull request already exists for %s into %s',
+        `${chalk.red("✗")} ${format(
+          "An open pull request already exists for %s into %s",
           chalk.cyan(branch),
           chalk.cyan(baseBranch),
         )}`,
@@ -202,26 +218,32 @@ export default class Start extends AuthenticatedCommand {
       this.exit(1)
     }
 
-    const prTitlePattern = this.store.get('prTitlePattern') || '(?:)'
-    const prTitleTemplate = this.store.get('prTitleTemplate') || ''
+    const prTitlePattern = new RegExp(
+      this.store.get("prTitlePattern") || "(?:)",
+    )
+    const prTitleTemplate = this.store.get("prTitleTemplate") || ""
     const defaultPrTitle = doT.template(prTitleTemplate, {
-      argName: ['issue'],
+      argName: ["issue"],
     })({ issue })
 
-    const pullRequestTitle = await askPullRequestTitle(
+    const pullRequestTitle = await askPrTitle(
       defaultPrTitle,
-      new RegExp(prTitlePattern),
+      (value: string) =>
+        (prTitlePattern?.test(value) ?? true) ||
+        `Your pull request title must match the pattern ${chalk.red(
+          prTitlePattern,
+        )}`,
     )
 
-    const prBodyTemplate = this.store.get('prBodyTemplate') || ''
+    const prBodyTemplate = this.store.get("prBodyTemplate") || ""
     const defaultPrBody = doT.template(prBodyTemplate, {
-      argName: ['issue'],
+      argName: ["issue"],
     })({ issue })
 
-    const prBody = defaultPrBody // await askPullRequestBody(defaultPrBody)
+    const prBody = defaultPrBody
 
     const commitMessage =
-      this.store.get('emptyCommitMessageTemplate') || pullRequestTitle
+      this.store.get("emptyCommitMessageTemplate") || pullRequestTitle
 
     // Submit
 
@@ -229,49 +251,49 @@ export default class Start extends AuthenticatedCommand {
 
     console.log()
 
-    this.spinner.start(format('Switching branch to %s', chalk.cyan(branch)))
+    this.action.start(format("Switching branch to %s", chalk.cyan(branch)))
 
     await git.fetch({ prune: true })
     await git.checkoutBranch(baseBranch)
     await git.pull()
     await git.createBranch(branch)
     await git.checkoutBranch(branch)
-    await git.setUpstream(branch, 'origin')
+    await git.setUpstream(branch, "origin")
 
     const currentBranch = await git.getCurrentBranch()
 
     if (branch === currentBranch) {
-      this.spinner.succeed(format('Switched branch to %s', chalk.cyan(branch)))
+      this.action.succeed(format("Switched branch to %s", chalk.cyan(branch)))
     } else {
       isReadyForWork = false
-      this.spinner.fail(
-        format('Could not switch branch to %s', chalk.cyan(branch)),
+      this.action.fail(
+        format("Could not switch branch to %s", chalk.cyan(branch)),
       )
     }
 
     try {
-      this.spinner.start(
+      this.action.start(
         format(
-          'Transitioning issue %s to %s',
+          "Transitioning issue %s to %s",
           chalk.cyan(issue.key),
           chalk.cyan(transition.name),
         ),
       )
 
-      if (issue.status.name !== transition.name) {
-        await atlassianService.transitionIssue(issue.key, transition.id)
-        this.spinner.succeed(
+      if (issue.fields.status.name !== transition.name) {
+        await jira.transitionIssue(issue.key, { transition })
+        this.action.succeed(
           format(
-            'Transitioned issue %s from %s to %s',
+            "Transitioned issue %s from %s to %s",
             chalk.cyan(issue.key),
-            chalk.cyan(issue.status.name),
+            chalk.cyan(issue.fields.status.name),
             chalk.cyan(transition.name),
           ),
         )
       } else {
-        this.spinner.succeed(
+        this.action.succeed(
           format(
-            'Skipped transition. Issue %s is already in %s',
+            "Skipped transition. Issue %s is already in %s",
             chalk.cyan(issue.key),
             chalk.cyan(transition.name),
           ),
@@ -279,9 +301,10 @@ export default class Start extends AuthenticatedCommand {
       }
     } catch (error) {
       isReadyForWork = false
-      this.spinner.fail(
+      if (flags.debug) console.error(error)
+      this.action.fail(
         format(
-          'Could not transition issue %s to %s',
+          "Could not transition issue %s to %s",
           chalk.cyan(issue.key),
           chalk.cyan(transition.name),
         ),
@@ -289,9 +312,9 @@ export default class Start extends AuthenticatedCommand {
     }
 
     try {
-      this.spinner.start(
+      this.action.start(
         format(
-          'Creating pull request for %s into %s',
+          "Creating pull request for %s into %s",
           chalk.cyan(branch),
           chalk.cyan(baseBranch),
         ),
@@ -301,15 +324,17 @@ export default class Start extends AuthenticatedCommand {
         sourceBranch: branch,
         targetBranch: baseBranch,
         commitMessage,
+        pushEmptyCommit: true,
         isDraft: true,
       })
 
-      this.spinner.succeed('Created pull request')
+      this.action.succeed("Created pull request")
     } catch (error) {
       isReadyForWork = false
-      this.spinner.fail(
+      if (flags.debug) console.error(error)
+      this.action.fail(
         format(
-          'Could not create pull request for %s into %s',
+          "Could not create pull request for %s into %s",
           chalk.cyan(branch),
           chalk.cyan(baseBranch),
         ),
@@ -319,38 +344,40 @@ export default class Start extends AuthenticatedCommand {
     console.log()
 
     if (isReadyForWork) {
-      enum OptionMessages {
-        Skip = 'Skip',
-        OpenIssue = 'Open issue in browser',
-        OpenPullRequest = 'Open pull request in browser',
-        OpenBoth = 'Open issue and pull request in browser',
+      enum Choices {
+        Skip = "Skip",
+        OpenPullRequest = "Open pull request in browser",
+        OpenIssue = "Open issue in browser",
+        OpenBoth = "Open issue and pull request in browser",
       }
 
-      const choice = await askOptions("What's next?", [
-        OptionMessages.Skip,
-        OptionMessages.OpenIssue,
-        OptionMessages.OpenPullRequest,
-        OptionMessages.OpenBoth,
+      const choice = await askChoice("What's next?", [
+        Choices.Skip,
+        Choices.OpenPullRequest,
+        Choices.OpenIssue,
+        Choices.OpenBoth,
       ])
 
+      const issueUrl = format("https://%s/browse/%s", host, issue.key)
+
       switch (choice) {
-        case OptionMessages.OpenIssue:
-          this.open(issue.url)
-          break
-        case OptionMessages.OpenPullRequest:
+        case Choices.OpenPullRequest:
           this.open(await git.getPullRequestUrl())
           break
-        case OptionMessages.OpenBoth:
-          this.open(issue.url)
+        case Choices.OpenIssue:
+          this.open(issueUrl)
+          break
+        case Choices.OpenBoth:
           this.open(await git.getPullRequestUrl())
+          this.open(issueUrl)
           break
       }
     } else {
-      let message = `${chalk.yellow('!')} Something went wrong.`
-      if (!flags.verbose) {
+      let message = `${chalk.yellow("!")} Something went wrong.`
+      if (!flags.debug) {
         message += format(
-          ' You can run the command with the %s flag to get more information.',
-          chalk.bold('--verbose'),
+          " You can run the command with the %s flag to get more information.",
+          chalk.bold("--debug"),
         )
       }
 

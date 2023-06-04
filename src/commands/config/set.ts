@@ -1,14 +1,14 @@
-import { Args } from '@oclif/core'
-import { BaseCommand } from '../..'
+import { Args } from "@oclif/core"
+import { BaseCommand } from "../../baseCommand.js"
 
 export default class Get extends BaseCommand {
   static args = {
     key: Args.string({
-      description: 'The key of the config option to get.',
+      description: "The key of the config option to get.",
       required: true,
     }),
     value: Args.string({
-      description: 'The value of the config option to set.',
+      description: "The value of the config option to set.",
     }),
   }
 
@@ -21,13 +21,13 @@ export default class Get extends BaseCommand {
       this.error(`Could not find key '${args.key}'`)
     }
 
+    if (!args.value) args.value = ""
+
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       this.store.set(args.key as any, args.value)
     } catch (_) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await this.store.authentication.set(args.key as any, args.value)
+        await this.store.secrets.set(args.key as any, args.value)
       } catch (_) {
         console.log(`Could not set key '${args.key}'`)
         this.exit(1)

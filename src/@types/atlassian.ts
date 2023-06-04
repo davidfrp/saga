@@ -1,40 +1,28 @@
-export type GetProjectsResponse = {
-  id: string
-  key: string
-  name: string
-}
-
 export type Project = {
   id: string
   key: string
   name: string
 }
 
-export type GetUserResponse = {
+export type User = {
   accountId: string
   emailAddress: string
   displayName: string
 }
 
-export type User = {
-  id: string
-  email: string
-  displayName: string
-}
-
 export enum StatusCategory {
-  Undefined = 'undefined',
-  ToDo = 'new',
-  InProgress = 'indeterminate',
-  Completed = 'done',
+  Undefined = "undefined",
+  ToDo = "new",
+  InProgress = "indeterminate",
+  Completed = "done",
 }
 
-export type SearchIssueResponse = {
+export type Issue = {
   id: string
   key: string
   fields: {
     summary: string
-    assignee?: GetUserResponse
+    assignee?: User
     issuetype: {
       name: string
       iconUrl: string
@@ -48,45 +36,14 @@ export type SearchIssueResponse = {
   }
 }
 
-export type SearchIssuesResponse = {
-  issues: SearchIssueResponse[]
-}
-
-export type Issue = {
-  key: string
-  summary: string
-  url: string
-  assignee?: User
-  type: {
-    name: string
-    color?: string
-  }
-  status: {
-    name: string
-    category: StatusCategory
-  }
-}
-
-export type GetIssueTransitionsResponse = {
-  transitions: {
-    id: string
-    name: string
-    to: {
-      description: string
-      statusCategory: {
-        name: string
-        key: StatusCategory
-      }
-    }
-  }[]
-}
-
-export type IssueTransition = {
+export type Transition = {
   id: string
   name: string
-  description: string
-  status: {
-    name: string
-    category: StatusCategory
+  to: {
+    description: string
+    statusCategory: {
+      name: string
+      key: StatusCategory
+    }
   }
 }

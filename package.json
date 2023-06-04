@@ -1,9 +1,12 @@
 {
   "name": "@davidfrp/saga",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Eases the flow of work for developers.",
   "author": "David Petersen @davidfrp",
-  "bin": "./bin/run",
+  "bin": {
+    "saga": "./bin/run.js"
+  },
+  "type": "module",
   "homepage": "https://github.com/davidfrp/saga",
   "license": "MIT",
   "main": "dist/index.js",
@@ -17,40 +20,40 @@
   "dependencies": {
     "@oclif/core": "^2",
     "@oclif/plugin-help": "^5",
-    "@oclif/plugin-plugins": "^2.4.4",
-    "chalk": "^4.1.2",
+    "@oclif/plugin-plugins": "^2.4.7",
+    "chalk": "^5.2.0",
     "dot": "beta",
-    "external-editor": "^3.1.0",
     "fuzzysort": "^2.0.4",
-    "got": "^11.0.0",
-    "inquirer": "^8.0.0",
-    "inquirer-autocomplete-prompt": "^2.0.0",
+    "inquirer": "^9.2.6",
+    "inquirer-autocomplete-prompt": "^3.0.0",
+    "jira-client": "^8.2.2",
     "keytar": "^7.9.0",
-    "ora": "5.4.1",
+    "ora": "^6.3.1",
     "shelljs": "^0.8.5",
     "update-notifier": "^6.0.2"
   },
   "devDependencies": {
-    "@oclif/test": "^2.3.15",
-    "@types/chai": "^4",
-    "@types/inquirer": "^8.0.0",
-    "@types/inquirer-autocomplete-prompt": "^2.0.0",
-    "@types/mocha": "^9.0.0",
-    "@types/node": "^16.18.23",
+    "@oclif/test": "^2.3.21",
+    "@types/dot": "^1.1.5",
+    "@types/inquirer": "^9.0.3",
+    "@types/inquirer-autocomplete-prompt": "^3.0.0",
+    "@types/jira-client": "^7.1.6",
+    "@types/node": "^16.18.34",
     "@types/shelljs": "^0.8.12",
     "@types/update-notifier": "^6.0.4",
-    "@typescript-eslint/eslint-plugin": "^5.59.2",
-    "@typescript-eslint/parser": "^5.59.2",
-    "chai": "^4",
-    "eslint": "^8.40.0",
-    "eslint-config-prettier": "^8.8.0",
-    "mocha": "^9",
+    "@typescript-eslint/eslint-plugin": "^5.59.8",
+    "@typescript-eslint/parser": "^5.59.8",
+    "eslint": ">=8.0.0",
+    "eslint-config-oclif": "^4",
+    "eslint-config-oclif-typescript": "^1.0.3",
+    "eslint-plugin-promise": "^6.0.0",
+    "eslint-plugin-require-extensions": "^0.1.3",
     "nodemon": "^2.0.22",
     "oclif": "^3",
     "shx": "^0.3.3",
     "ts-node": "^10.9.1",
-    "tslib": "^2.5.0",
-    "typescript": "^5.0.4"
+    "tslib": "^2.5.2",
+    "typescript": ">=4.4"
   },
   "oclif": {
     "bin": "saga",
@@ -68,23 +71,23 @@
     },
     "hooks": {
       "init": [
-        "./dist/hooks/init/check-for-update"
+        "./dist/hooks/init/checkForUpdates.js"
       ]
     }
   },
   "scripts": {
-    "start": "./bin/run",
+    "start": "node ./bin/run.js",
     "dev": "nodemon -e js,ts --watch src --exec \"yarn build\"",
     "build": "shx rm -rf dist && tsc -b",
-    "lint": "eslint . --ext .ts --config .eslintrc",
+    "codegen": "openapi --input ./spec.json --output ./src/@types/generated --useUnionTypes --name AppClient",
+    "lint": "eslint . --ext .ts --config .eslintrc.json",
     "postpack": "shx rm -f oclif.manifest.json",
     "posttest": "yarn lint",
     "prepack": "yarn build && oclif manifest && oclif readme",
-    "test": "mocha --forbid-only \"test/**/*.test.ts\"",
     "version": "oclif readme && git add README.md"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=12.0.0"
   },
   "bugs": "https://github.com/davidfrp/saga/issues",
   "keywords": [

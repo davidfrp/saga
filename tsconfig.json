@@ -1,12 +1,16 @@
 {
   "compilerOptions": {
+    "module": "ES2020",
+    "moduleResolution": "bundler",
     "declaration": true,
     "importHelpers": true,
-    "module": "commonjs",
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
-    "target": "es2019"
+    "target": "ES2020"
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "ts-node": {
+    "esm": true
+  }
 }
