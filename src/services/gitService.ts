@@ -146,15 +146,15 @@ export default class GitService {
     body: string,
     options: CreatePullRequestOptions,
   ): Promise<void> {
-    const branch = options.sourceBranch || this.getCurrentBranch()
+    const branch = options.sourceBranch || (await this.getCurrentBranch())
 
     const baseBranch = options.targetBranch || branch
 
     const reviewers = options.reviewers || []
 
     if (options.pushEmptyCommit) {
-      this.commit(options.commitMessage, { allowEmpty: true })
-      this.push()
+      await this.commit(options.commitMessage, { allowEmpty: true })
+      await this.push()
     }
 
     const command = `gh pr create --title "${title}" --body "${body}" ${
