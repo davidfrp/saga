@@ -20,13 +20,14 @@ export enum StatusCategory {
 export type Issue = {
   id: string
   key: string
-  url: string
+  url: string // custom field
   fields: {
     summary: string
     assignee?: User
     issuetype: {
       name: string
       iconUrl: string
+      color?: string // custom field
     }
     status: {
       name: string

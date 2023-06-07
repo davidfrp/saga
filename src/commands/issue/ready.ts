@@ -1,10 +1,10 @@
 import { Flags } from "@oclif/core"
 import { format } from "util"
 import chalk from "chalk"
-import JiraApi from "jira-client"
 import { AuthenticatedCommand } from "../../authenticatedCommand.js"
-import { Issue, StatusCategory, Transition } from "../../@types/atlassian.js"
 import GitService from "../../services/gitService.js"
+import JiraService from "../../services/jiraService.js"
+import { StatusCategory, Transition } from "../../@types/atlassian.js"
 import { askTransition, askChoice } from "../../prompts/index.js"
 
 export default class Ready extends AuthenticatedCommand {
@@ -49,18 +49,15 @@ export default class Ready extends AuthenticatedCommand {
     const email = this.store.get("email")
     const token = await this.store.secrets.get("atlassianApiToken")
 
-    const jira = new JiraApi({
-      protocol: "https",
+    const jira = new JiraService({
       host,
-      username: email,
-      password: token,
-      apiVersion: "3",
-      strictSSL: true,
+      email,
+      token,
     })
 
     const branch = await git.getCurrentBranch()
     const issueKey = branch.match(/\p{Lu}+-\d+/u)?.[0] ?? ""
-    const issue = (await jira.getIssue(issueKey)) as Issue
+    const issue = await jira.findIssue(issueKey)
 
     if (!issue) {
       this.action.stop()
@@ -70,8 +67,7 @@ export default class Ready extends AuthenticatedCommand {
       return this.exit(1)
     }
 
-    const response = await jira.listTransitions(issue.key)
-    const transitions = response.transitions as Transition[]
+    const transitions = await jira.listTransitions(issue.key)
 
     const filteredTransitions = transitions.filter(
       (transition) =>
@@ -105,7 +101,7 @@ export default class Ready extends AuthenticatedCommand {
     )
     try {
       if (issue.fields.status.name !== transition.name) {
-        await jira.transitionIssue(issue.key, { transition })
+        await jira.transitionIssue(issue.key, transition.id)
         this.action.succeed(
           format(
             "Transitioned issue %s from %s to %s",

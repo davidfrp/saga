@@ -1,10 +1,10 @@
 import { format } from "util"
 import { Args, Flags } from "@oclif/core"
-import JiraApi from "jira-client"
 import chalk from "chalk"
 import doT from "dot"
 import { AuthenticatedCommand } from "../../authenticatedCommand.js"
 import GitService from "../../services/gitService.js"
+import JiraService from "../../services/jiraService.js"
 import {
   Issue,
   Project,
@@ -54,13 +54,10 @@ export default class Start extends AuthenticatedCommand {
     const email = this.store.get("email")
     const token = await this.store.secrets.get("atlassianApiToken")
 
-    const jira = new JiraApi({
-      protocol: "https",
+    const jira = new JiraService({
       host,
-      username: email,
-      password: token,
-      apiVersion: "3",
-      strictSSL: true,
+      email,
+      token,
     })
 
     let projectKey = this.store.get("project")
@@ -99,8 +96,7 @@ export default class Start extends AuthenticatedCommand {
       }
 
       try {
-        const response = await jira.findIssue(args.id)
-        issue = response as Issue
+        issue = await jira.findIssue(args.id)
       } catch (error) {
         if (flags.debug) console.error(error)
       }
@@ -128,8 +124,7 @@ export default class Start extends AuthenticatedCommand {
 
       let issues: Issue[] = []
       try {
-        const response = await jira.searchJira(jql)
-        issues = response.issues as Issue[]
+        issues = await jira.findIssuesByJql(jql)
       } catch (error) {
         if (flags.debug) console.error(error)
       }
@@ -139,8 +134,7 @@ export default class Start extends AuthenticatedCommand {
 
     issue.url = `https://${host}/browse/${issue.key}`
 
-    const response = await jira.listTransitions(issue.key)
-    const transitions = response.transitions as Transition[]
+    const transitions = await jira.listTransitions(issue.key)
 
     const filteredTransitions = transitions.filter(
       (transition) =>
@@ -283,7 +277,7 @@ export default class Start extends AuthenticatedCommand {
       )
 
       if (issue.fields.status.name !== transition.name) {
-        await jira.transitionIssue(issue.key, { transition })
+        await jira.transitionIssue(issue.key, transition.id)
         this.action.succeed(
           format(
             "Transitioned issue %s from %s to %s",
