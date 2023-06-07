@@ -1,4 +1,5 @@
 import fuzzysort from "fuzzysort"
+import inquirer from "inquirer"
 
 const sanitizeOfAnsiCodes = (value: string): string => {
   // eslint-disable-next-line no-control-regex
@@ -47,7 +48,7 @@ type SourceRow<T> = {
   value: T
 }
 
-export type SourceFn<T> = SourceRow<T>[]
+export type SourceFn<T> = (SourceRow<T> | inquirer.Separator)[]
 
 /**
  * Returns a function that generates a source function based on provided items and options.
@@ -164,6 +165,6 @@ export const getSourceFn = <T extends Record<string, unknown> | string>(
 
     const filteredRows = filterRows(rows, input)
 
-    return filteredRows
+    return [...filteredRows, new inquirer.Separator()]
   }
 }
