@@ -137,6 +137,8 @@ export default class Start extends AuthenticatedCommand {
       issue = await askIssue(issues)
     }
 
+    issue.url = `https://${host}/browse/${issue.key}`
+
     const response = await jira.listTransitions(issue.key)
     const transitions = response.transitions as Transition[]
 
@@ -358,18 +360,16 @@ export default class Start extends AuthenticatedCommand {
         Choices.OpenBoth,
       ])
 
-      const issueUrl = format("https://%s/browse/%s", host, issue.key)
-
       switch (choice) {
         case Choices.OpenPullRequest:
           this.open(await git.getPullRequestUrl())
           break
         case Choices.OpenIssue:
-          this.open(issueUrl)
+          this.open(issue.url)
           break
         case Choices.OpenBoth:
           this.open(await git.getPullRequestUrl())
-          this.open(issueUrl)
+          this.open(issue.url)
           break
       }
     } else {

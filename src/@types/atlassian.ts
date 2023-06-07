@@ -20,6 +20,7 @@ export enum StatusCategory {
 export type Issue = {
   id: string
   key: string
+  url: string
   fields: {
     summary: string
     assignee?: User
