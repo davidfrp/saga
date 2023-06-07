@@ -29,9 +29,8 @@ export default class Start extends AuthenticatedCommand {
   }
 
   static flags = {
-    project: Flags.boolean({
-      char: "p",
-      description: "Select a different project",
+    "list-projects": Flags.boolean({
+      description: "List all projects you have access to",
     }),
     debug: Flags.boolean({
       description:
@@ -61,11 +60,12 @@ export default class Start extends AuthenticatedCommand {
     })
 
     let projectKey = this.store.get("project")
-    if (!projectKey || flags.project) {
+    if (!projectKey || flags["list-projects"]) {
       const projects = await jira.listProjects()
 
       if (projects.length === 1) {
-        projectKey = projects[0].key
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        projectKey = projects.at(0)!.key
         this.log(
           `${chalk.yellow("!")} ${format(
             "Using %s as project since there are no other projects to choose from.",
@@ -79,11 +79,11 @@ export default class Start extends AuthenticatedCommand {
 
       this.store.set("project", projectKey)
 
-      if (!flags.project && projects.length > 1) {
+      if (!flags["list-projects"] && projects.length > 1) {
         this.log(
           `${format(
-            "You can change your project at any time by adding the %s flag",
-            chalk.bold("--project"),
+            "You can view and select a different project at any time by adding the %s flag",
+            chalk.bold("--list-projects"),
           )}`,
         )
       }
