@@ -19,6 +19,7 @@ import {
   askBaseBranch,
   askPrTitle,
   askChoice,
+  askAssignYou,
 } from "../../prompts/index.js"
 
 export default class Start extends AuthenticatedCommand {
@@ -132,7 +133,10 @@ export default class Start extends AuthenticatedCommand {
       issue = await askIssue(issues)
     }
 
-    issue.url = `https://${host}/browse/${issue.key}`
+    let shouldAssignToUser = false
+    if (issue.fields.assignee?.emailAddress !== email) {
+      shouldAssignToUser = await askAssignYou()
+    }
 
     const transitions = await jira.listTransitions(issue.key)
 
@@ -265,6 +269,37 @@ export default class Start extends AuthenticatedCommand {
       this.action.fail(
         format("Could not switch branch to %s", chalk.cyan(branch)),
       )
+    }
+
+    if (shouldAssignToUser) {
+      try {
+        this.action.start(
+          format(
+            "Assigning issue %s to %s",
+            chalk.cyan(issue.key),
+            chalk.cyan(email),
+          ),
+        )
+        const currentUser = await jira.getCurrentUser()
+        await jira.assignIssue(issue.key, currentUser.accountId)
+        this.action.succeed(
+          format(
+            "Assigned issue %s to %s",
+            chalk.cyan(issue.key),
+            chalk.cyan(email),
+          ),
+        )
+      } catch (error) {
+        isReadyForWork = false
+        if (flags.debug) console.error(error)
+        this.action.fail(
+          format(
+            "Could not assign issue %s to %s",
+            chalk.cyan(issue.key),
+            chalk.cyan(email),
+          ),
+        )
+      }
     }
 
     try {

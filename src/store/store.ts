@@ -1,7 +1,7 @@
 import { homedir } from "node:os"
 import { dirname } from "node:path"
 import * as fs from "node:fs"
-import * as keytar from "keytar"
+import keytar from "keytar"
 
 interface DefaultStoreOptions<T> {
   key: keyof T

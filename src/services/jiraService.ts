@@ -1,5 +1,5 @@
 import JiraApi from "jira-client"
-import { Issue, Project, Transition } from "../@types/atlassian.js"
+import { Issue, Project, Transition, User } from "../@types/atlassian.js"
 
 export type JiraServiceOptions = {
   host: string
@@ -24,7 +24,7 @@ export default class JiraService {
     })
   }
 
-  private async getSvgColor(svgUrl: string) {
+  private async colorFromSvg(svgUrl: string) {
     const response = await fetch(svgUrl)
     const svg = await response.text()
     const color = svg.match(/fill="#([0-9a-f]{6})"/i)?.[1]
@@ -33,18 +33,22 @@ export default class JiraService {
 
   private async fillIssue(issue: Issue): Promise<Issue> {
     issue.url = `https://${this.host}/browse/${issue.key}`
-    issue.fields.issuetype.color = await this.getSvgColor(
+    issue.fields.issuetype.color = await this.colorFromSvg(
       issue.fields.issuetype.iconUrl,
     )
     return issue
+  }
+
+  async getCurrentUser(): Promise<User> {
+    return this.api.getCurrentUser() as Promise<User>
   }
 
   async listProjects(): Promise<Project[]> {
     return this.api.listProjects() as Promise<Project[]>
   }
 
-  async findIssue(issueKeyOrId: string): Promise<Issue> {
-    const response = await this.api.getIssue(issueKeyOrId)
+  async findIssue(issueIdOrKey: string): Promise<Issue> {
+    const response = await this.api.getIssue(issueIdOrKey)
     return this.fillIssue(response as Issue)
   }
 
@@ -69,5 +73,9 @@ export default class JiraService {
         id: transitionId,
       },
     })
+  }
+
+  async assignIssue(issueKeyOrId: string, assigneeId: string): Promise<void> {
+    await this.api.updateAssigneeWithId(issueKeyOrId, assigneeId)
   }
 }
