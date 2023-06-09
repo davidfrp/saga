@@ -118,8 +118,7 @@ export default class Start extends AuthenticatedCommand {
           assignee IN (currentUser()) OR
           assignee IS EMPTY
         ) AND statusCategory IN (
-          ${StatusCategory.ToDo},
-          ${StatusCategory.InProgress}
+          ${StatusCategory.ToDo}
         ) ORDER BY lastViewed DESC
       `
 
