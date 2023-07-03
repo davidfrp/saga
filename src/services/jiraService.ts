@@ -1,3 +1,4 @@
+import fetch from "node-fetch"
 import JiraApi from "jira-client"
 import { Issue, Project, Transition, User } from "../@types/atlassian.js"
 
