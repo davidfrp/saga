@@ -13,6 +13,7 @@ interface StoreKeys {
   baseBranch: string
   workingStatus: string
   readyForReviewStatus: string
+  skipConfirmations: string
   branchNameTemplate: string
   branchNamePattern: string
   prTitleTemplate: string
@@ -51,6 +52,12 @@ const config = new Store<StoreKeys, AuthStoreKeys>(
       key: "readyForReviewStatus",
       description:
         "Status to transition to when marking an issue as ready for review.",
+    },
+    {
+      key: "skipConfirmations",
+      description:
+        "Whether to skip confirmation prompts when running commands.",
+      defaultValue: "false",
     },
     {
       key: "branchNameTemplate",

@@ -14,12 +14,13 @@ import {
 import {
   askProject,
   askIssue,
+  askAssignYou,
   askTransition,
   askBranchName,
   askBaseBranch,
   askPrTitle,
+  askConfirmation,
   askChoice,
-  askAssignYou,
 } from "../../prompts/index.js"
 
 export default class Start extends AuthenticatedCommand {
@@ -192,12 +193,12 @@ export default class Start extends AuthenticatedCommand {
         baseBranch = await askBaseBranch(baseBranches)
       } else {
         if (baseBranches.length === 1) {
-          baseBranch = baseBranches.pop() as string
+          baseBranch = baseBranches[0]
         } else {
           baseBranch = await git.getCurrentBranch()
         }
 
-        console.log(
+        this.log(
           `${chalk.yellow("!")} ${format(
             "Using %s as base branch since there are no other branches to choose from.",
             chalk.cyan(baseBranch),
@@ -244,11 +245,44 @@ export default class Start extends AuthenticatedCommand {
     const commitMessage =
       this.store.get("emptyCommitMessageTemplate") || pullRequestTitle
 
+    // Confirm actions
+
+    const skipConfirmations = this.store.get("skipConfirmations") === "true"
+    if (!skipConfirmations) {
+      this.log(
+        `${chalk.yellow("!")} ${format(
+          "You want to transition %s to %s",
+          chalk.cyan(issue.key),
+          chalk.cyan(transition.name),
+        )}`,
+      )
+
+      if (shouldAssignToUser) {
+        this.log(
+          `${chalk.yellow("!")} ${format(
+            "You want to be assigned %s",
+            chalk.cyan(issue.key),
+          )}`,
+        )
+      }
+
+      this.log(
+        `${chalk.yellow("!")} ${format(
+          "You want a pull request for %s into %s",
+          chalk.cyan(branch),
+          chalk.cyan(baseBranch),
+        )}`,
+      )
+
+      const shouldContinue = await askConfirmation()
+      if (!shouldContinue) this.exit(0)
+    }
+
     // Submit
 
     let isReadyForWork = true
 
-    console.log()
+    this.log()
 
     this.action.start(format("Switching branch to %s", chalk.cyan(branch)))
 
@@ -371,7 +405,7 @@ export default class Start extends AuthenticatedCommand {
       )
     }
 
-    console.log()
+    this.log()
 
     if (isReadyForWork) {
       enum Choices {
@@ -409,9 +443,9 @@ export default class Start extends AuthenticatedCommand {
         )
       }
 
-      console.log(message)
+      this.log(message)
     }
 
-    console.log()
+    this.log()
   }
 }
