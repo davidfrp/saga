@@ -1,11 +1,9 @@
 {
   "name": "@davidfrp/saga",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Eases the flow of work for developers.",
   "author": "David Petersen @davidfrp",
-  "bin": {
-    "saga": "./bin/run.js"
-  },
+  "bin": "./bin/run.js",
   "type": "module",
   "homepage": "https://github.com/davidfrp/saga",
   "license": "MIT",

@@ -1,5 +1,6 @@
 import shelljs, { ExecOutputReturnValue } from "shelljs"
 const { exec, config: shelljsConfig } = shelljs
+import chalk from "chalk"
 
 export type CreatePullRequestOptions = {
   commitMessage: string
@@ -67,6 +68,46 @@ export type GitServiceOptions = {
   debug?: boolean
 }
 
+export class GitServiceError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "GitServiceError"
+  }
+}
+
+export class GitMissingError extends GitServiceError {
+  constructor() {
+    super(`Git is not installed
+  To install Git, visit https://git-scm.com/book/en/v2/Getting-Started-Installing-Git`)
+    this.name = "GitMissingError"
+  }
+}
+
+export class NotInGitRepositoryError extends GitServiceError {
+  constructor() {
+    super("Not in a git repository")
+    this.name = "NotInGitRepositoryError"
+  }
+}
+
+export class GitHubCliMissingError extends GitServiceError {
+  constructor() {
+    super(`GitHub CLI is not installed
+  To install GitHub CLI, visit https://cli.github.com/manual/installation`)
+    this.name = "GitHubCliMissingError"
+  }
+}
+
+export class GitHubCliUnauthenticatedError extends GitServiceError {
+  constructor() {
+    super(`Unable to authenticate with GitHub CLI.
+  Check your internet connection and ensure you are logged in by running ${chalk.bold(
+    "gh auth status",
+  )}`)
+    this.name = "GitHubCliNotAuthenticatedError"
+  }
+}
+
 export default class GitService {
   constructor(options?: GitServiceOptions) {
     shelljsConfig.silent = !options?.debug
@@ -74,16 +115,14 @@ export default class GitService {
   }
 
   async checkRequirements(): Promise<this> {
-    if (!(await this.isGitInstalled())) throw new Error("Git is not installed")
+    if (!(await this.isGitInstalled())) throw new GitMissingError()
 
-    if (!(await this.isInGitRepository()))
-      throw new Error("Not in a git repository")
+    if (!(await this.isInGitRepository())) throw new NotInGitRepositoryError()
 
-    if (!(await this.isGitHubCliInstalled()))
-      throw new Error("GitHub CLI is not installed")
+    if (!(await this.isGitHubCliInstalled())) throw new GitHubCliMissingError()
 
     if (!(await this.isGitHubCliAuthenticated()))
-      throw new Error("GitHub CLI is not authenticated")
+      throw new GitHubCliUnauthenticatedError()
 
     return this
   }
