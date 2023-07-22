@@ -6,6 +6,7 @@ import shelljs, { ExecOutputReturnValue } from "shelljs"
 import ora, { Ora } from "ora"
 import { Store } from "./store/store.js"
 import Logger from "./logger.js"
+import { format } from "node:util"
 
 interface StoreKeys {
   email: string
@@ -179,10 +180,10 @@ export abstract class BaseCommand extends Command {
     this.logger.persist()
 
     console.log(
-      `${chalk.yellow(
-        "!",
-      )} Something went wrong. A crash log has been created for you.`,
+      `\n${chalk.yellow("!")} ${format(
+        "Something went wrong. A crash log has been generated.\n  %s",
+        this.logger.filePath,
+      )}\n`,
     )
-    console.log(`  ${this.logger.filePath}`)
   }
 }
