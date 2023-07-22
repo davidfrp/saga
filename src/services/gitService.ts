@@ -224,14 +224,6 @@ export class GitService {
 
     const reviewers = options.reviewers || []
 
-    // if (options.pushEmptyCommit) {
-    //   await this.commit(options.commitMessage, {
-    //     allowEmpty: true,
-    //     noVerify: true,
-    //   })
-    //   await this.push()
-    // }
-
     const flags: string[] = [
       `--title "${options.title}"`,
       `--body "${options.body}"`,

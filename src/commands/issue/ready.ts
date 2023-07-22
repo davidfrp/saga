@@ -9,6 +9,11 @@ import {
 import JiraService from "../../services/jiraService.js"
 import { StatusCategory, Transition } from "../../@types/atlassian.js"
 import { askTransition, askChoice } from "../../prompts/index.js"
+import { TaskStatus, Tasker } from "../../tasker.js"
+
+interface TaskerContext {
+  transition: Transition
+}
 
 export default class Ready extends AuthenticatedCommand {
   static summary = "Mark an issue as ready for review"
@@ -87,92 +92,92 @@ export default class Ready extends AuthenticatedCommand {
       this.store.set("readyForReviewStatus", transition.name)
     }
 
-    let isReadyForReview = true
-
-    this.action.start(
-      format(
-        "Transitioning %s to %s",
-        chalk.cyan(issue.key),
-        chalk.cyan(transition.name),
-      ),
+    const tasks = new Tasker<TaskerContext>(
+      [
+        {
+          titles: {
+            [TaskStatus.Running]: format(
+              "Transitioning %s to %s",
+              chalk.cyan(issue.key),
+              chalk.cyan(transition.name),
+            ),
+            [TaskStatus.Skipped]: format(
+              "Skipped transition. Issue %s is already in %s",
+              chalk.cyan(issue.key),
+              chalk.cyan(transition.name),
+            ),
+            [TaskStatus.Done]: format(
+              "Transitioned issue %s from %s to %s",
+              chalk.cyan(issue.key),
+              chalk.cyan(issue.fields.status.name),
+              chalk.cyan(transition.name),
+            ),
+            [TaskStatus.Failed]: format(
+              "Could not transition %s to %s",
+              chalk.cyan(issue.key),
+              chalk.cyan(transition.name),
+            ),
+          },
+          skip: ({ transition }) =>
+            issue.fields.status.name === transition.name,
+          action: ({ transition }) =>
+            jira.transitionIssue(issue.key, transition.id),
+        },
+        {
+          titles: {
+            [TaskStatus.Running]: "Marking pull request as ready for review",
+            [TaskStatus.Done]: "Marked pull request as ready for review",
+            [TaskStatus.Failed]:
+              "Could not mark pull request as ready for review",
+          },
+          action: () => git.markAsReady(),
+        },
+      ],
+      {
+        onStatusChange: {
+          [TaskStatus.Running]: (task) =>
+            this.action.start(task.titles[TaskStatus.Running]),
+          [TaskStatus.Skipped]: (task) =>
+            this.action.warn(task.titles[TaskStatus.Skipped]),
+          [TaskStatus.Done]: (task) =>
+            this.action.succeed(task.titles[TaskStatus.Done]),
+          [TaskStatus.Failed]: (task) =>
+            this.action.fail(task.titles[TaskStatus.Failed]),
+        },
+      },
     )
-    try {
-      if (issue.fields.status.name !== transition.name) {
-        await jira.transitionIssue(issue.key, transition.id)
-        this.action.succeed(
-          format(
-            "Transitioned issue %s from %s to %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(issue.fields.status.name),
-            chalk.cyan(transition.name),
-          ),
-        )
-      } else {
-        this.action.succeed(
-          format(
-            "Skipped transition. Issue %s is already in %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(transition.name),
-          ),
-        )
-      }
-    } catch (error) {
-      isReadyForReview = false
-      if (error instanceof Error) {
-        this.logger.log(error.stack ?? error.message)
-      }
-      this.action.fail(
-        format(
-          "Could not transition %s to %s",
-          chalk.cyan(issue.key),
-          chalk.cyan(transition.name),
-        ),
-      )
+
+    await tasks.run({ transition })
+
+    console.log()
+
+    enum OptionMessages {
+      Skip = "Skip",
+      OpenPullRequest = "Open pull request in browser",
+      OpenIssue = "Open issue in browser",
+      OpenBoth = "Open issue and pull request in browser",
     }
 
-    this.action.start("Marking pull request as ready for review")
-    try {
-      await git.markAsReady()
-      this.action.succeed("Marked pull request as ready for review")
-    } catch (error) {
-      isReadyForReview = false
-      if (error instanceof Error) {
-        this.logger.log(error.stack ?? error.message)
-      }
-      this.action.fail("Could not mark pull request as ready for review")
-    }
+    const choice = await askChoice("What's next?", [
+      OptionMessages.Skip,
+      OptionMessages.OpenPullRequest,
+      OptionMessages.OpenIssue,
+      OptionMessages.OpenBoth,
+    ])
 
-    if (isReadyForReview) {
-      console.log()
+    const issueUrl = format("https://%s/browse/%s", host, issue.key)
 
-      enum OptionMessages {
-        Skip = "Skip",
-        OpenPullRequest = "Open pull request in browser",
-        OpenIssue = "Open issue in browser",
-        OpenBoth = "Open issue and pull request in browser",
-      }
-
-      const choice = await askChoice("What's next?", [
-        OptionMessages.Skip,
-        OptionMessages.OpenPullRequest,
-        OptionMessages.OpenIssue,
-        OptionMessages.OpenBoth,
-      ])
-
-      const issueUrl = format("https://%s/browse/%s", host, issue.key)
-
-      switch (choice) {
-        case OptionMessages.OpenPullRequest:
-          this.open(await git.getPullRequestUrl())
-          break
-        case OptionMessages.OpenIssue:
-          this.open(issueUrl)
-          break
-        case OptionMessages.OpenBoth:
-          this.open(issueUrl)
-          this.open(await git.getPullRequestUrl())
-          break
-      }
+    switch (choice) {
+      case OptionMessages.OpenPullRequest:
+        this.open(await git.getPullRequestUrl())
+        break
+      case OptionMessages.OpenIssue:
+        this.open(issueUrl)
+        break
+      case OptionMessages.OpenBoth:
+        this.open(issueUrl)
+        this.open(await git.getPullRequestUrl())
+        break
     }
 
     console.log()

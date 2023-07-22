@@ -21,6 +21,12 @@ import {
   askPrTitle,
   askChoice,
 } from "../../prompts/index.js"
+import { Task, TaskStatus, Tasker } from "../../tasker.js"
+
+interface TaskerContext {
+  issue: Issue
+  transition: Transition
+}
 
 export default class Start extends AuthenticatedCommand {
   static summary = "Start working on an issue"
@@ -212,6 +218,22 @@ export default class Start extends AuthenticatedCommand {
       }
     }
 
+    console.log(
+      `${chalk.yellow("!")} ${format(
+        "This will create a pull request for %s into %s",
+        chalk.cyan(branch),
+        chalk.cyan(baseBranch),
+      )}`,
+    )
+
+    console.log(
+      `${chalk.yellow("!")} ${format(
+        "%s will be based on %s",
+        chalk.cyan(branch),
+        chalk.cyan(baseBranch),
+      )}`,
+    )
+
     if (await git.doesOpenPrExist(branch, baseBranch)) {
       console.error(
         `${chalk.red("✗")} ${format(
@@ -250,184 +272,155 @@ export default class Start extends AuthenticatedCommand {
     const commitMessage =
       this.store.get("emptyCommitMessageTemplate") || pullRequestTitle
 
-    // // Confirm actions
+    const tasks: Task<TaskerContext>[] = [
+      {
+        titles: {
+          [TaskStatus.Running]: format(
+            "Switching branch to %s",
+            chalk.cyan(branch),
+          ),
+          [TaskStatus.Done]: format(
+            "Switched branch to %s",
+            chalk.cyan(branch),
+          ),
+          [TaskStatus.Failed]: format(
+            "Could not switch branch to %s",
+            chalk.cyan(branch),
+          ),
+        },
+        action: async () => {
+          await git.fetch({ prune: true })
+          await git.checkoutBranch(baseBranch)
+          await git.pull()
+          await git.createBranch(branch)
+          await git.checkoutBranch(branch)
+          await git.setUpstream(branch, "origin")
 
-    // const skipConfirmations = this.store.get("skipConfirmations") === "true"
-    // if (!skipConfirmations) {
-    //   console.log(
-    //     `${chalk.yellow("!")} ${format(
-    //       "You want to transition %s to %s",
-    //       chalk.cyan(issue.key),
-    //       chalk.cyan(transition.name),
-    //     )}`,
-    //   )
+          const currentBranch = await git.getCurrentBranch()
 
-    //   if (shouldAssignToUser) {
-    //     console.log(
-    //       `${chalk.yellow("!")} ${format(
-    //         "You want to be assigned %s",
-    //         chalk.cyan(issue.key),
-    //       )}`,
-    //     )
-    //   }
-
-    //   console.log(
-    //     `${chalk.yellow("!")} ${format(
-    //       "You want a pull request for %s into %s",
-    //       chalk.cyan(branch),
-    //       chalk.cyan(baseBranch),
-    //     )}`,
-    //   )
-
-    //   const shouldContinue = await askConfirmation()
-    //   if (!shouldContinue) this.exit(0)
-    // }
-
-    // Submit
-
-    let isReadyForWork = true
-
-    console.log()
-
-    this.action.start(format("Switching branch to %s", chalk.cyan(branch)))
-
-    await git.fetch({ prune: true })
-    await git.checkoutBranch(baseBranch)
-    await git.pull()
-    await git.createBranch(branch)
-    await git.checkoutBranch(branch)
-    await git.setUpstream(branch, "origin")
-
-    const currentBranch = await git.getCurrentBranch()
-
-    if (branch === currentBranch) {
-      this.action.succeed(format("Switched branch to %s", chalk.cyan(branch)))
-    } else {
-      isReadyForWork = false
-      this.action.fail(
-        format("Could not switch branch to %s", chalk.cyan(branch)),
-      )
-    }
+          if (currentBranch !== branch) {
+            throw new Error(
+              format(
+                "Expected current branch to be %s but got %s",
+                branch,
+                currentBranch,
+              ),
+            )
+          }
+        },
+      },
+    ]
 
     if (shouldAssignToUser) {
-      try {
-        this.action.start(
-          format(
+      tasks.push({
+        titles: {
+          [TaskStatus.Running]: format(
             "Assigning issue %s to %s",
             chalk.cyan(issue.key),
             chalk.cyan(email),
           ),
-        )
-        const currentUser = await jira.getCurrentUser()
-        await jira.assignIssue(issue.key, currentUser.accountId)
-        this.action.succeed(
-          format(
+          [TaskStatus.Done]: format(
             "Assigned issue %s to %s",
             chalk.cyan(issue.key),
             chalk.cyan(email),
           ),
-        )
-      } catch (error) {
-        isReadyForWork = false
-        if (error instanceof Error) {
-          this.logger.log(error.stack ?? error.message)
-        }
-        this.action.fail(
-          format(
+          [TaskStatus.Failed]: format(
             "Could not assign issue %s to %s",
             chalk.cyan(issue.key),
             chalk.cyan(email),
           ),
-        )
-      }
+        },
+        action: async ({ issue }) => {
+          const currentUser = await jira.getCurrentUser()
+          await jira.assignIssue(issue.key, currentUser.accountId)
+        },
+      })
     }
 
-    try {
-      this.action.start(
-        format(
-          "Transitioning issue %s to %s",
-          chalk.cyan(issue.key),
-          chalk.cyan(transition.name),
-        ),
-      )
-
-      if (issue.fields.status.name !== transition.name) {
-        await jira.transitionIssue(issue.key, transition.id)
-        this.action.succeed(
-          format(
+    tasks.push(
+      {
+        titles: {
+          [TaskStatus.Running]: format(
+            "Transitioning issue %s to %s",
+            chalk.cyan(issue.key),
+            chalk.cyan(transition.name),
+          ),
+          [TaskStatus.Skipped]: format(
+            "Skipped transitioning issue %s to %s",
+            chalk.cyan(issue.key),
+            chalk.cyan(transition.name),
+          ),
+          [TaskStatus.Done]: format(
             "Transitioned issue %s from %s to %s",
             chalk.cyan(issue.key),
             chalk.cyan(issue.fields.status.name),
             chalk.cyan(transition.name),
           ),
-        )
-      } else {
-        this.action.succeed(
-          format(
-            "Skipped transition. Issue %s is already in %s",
+          [TaskStatus.Failed]: format(
+            "Could not transition issue %s to %s",
             chalk.cyan(issue.key),
             chalk.cyan(transition.name),
           ),
-        )
-      }
-    } catch (error) {
-      isReadyForWork = false
-      if (error instanceof Error) {
-        this.logger.log(error.stack ?? error.message)
-      }
-      this.action.fail(
-        format(
-          "Could not transition issue %s to %s",
-          chalk.cyan(issue.key),
-          chalk.cyan(transition.name),
-        ),
-      )
-    }
+        },
+        skip: ({ issue, transition }) =>
+          issue.fields.status.name === transition.name,
+        action: ({ issue, transition }) =>
+          jira.transitionIssue(issue.key, transition.id),
+      },
+      {
+        titles: {
+          [TaskStatus.Running]: format(
+            "Creating pull request for %s into %s",
+            chalk.cyan(branch),
+            chalk.cyan(baseBranch),
+          ),
+          [TaskStatus.Done]: "Created pull request",
+          [TaskStatus.Failed]: format(
+            "Could not create pull request for %s into %s",
+            chalk.cyan(branch),
+            chalk.cyan(baseBranch),
+          ),
+        },
+        action: async () => {
+          const commits = await git.getCommitsBetween(baseBranch, branch)
 
-    try {
-      this.action.start(
-        format(
-          "Creating pull request for %s into %s",
-          chalk.cyan(branch),
-          chalk.cyan(baseBranch),
-        ),
-      )
+          if (commits.length === 0) {
+            await git.commit(commitMessage, {
+              allowEmpty: true,
+              noVerify: true,
+            })
+            await git.push()
+          }
 
-      const commits = await git.getCommitsBetween(baseBranch, branch)
+          await git.createPullRequest({
+            head: branch,
+            base: baseBranch,
+            body: prBody,
+            title: pullRequestTitle,
+            isDraft: true,
+          })
+        },
+      },
+    )
 
-      if (commits.length === 0) {
-        await git.commit(commitMessage, { allowEmpty: true, noVerify: true })
-        await git.push()
-      }
-
-      await git.createPullRequest({
-        head: branch,
-        base: baseBranch,
-        body: prBody,
-        title: pullRequestTitle,
-        isDraft: true,
-      })
-
-      this.action.succeed("Created pull request")
-    } catch (error) {
-      isReadyForWork = false
-      if (error instanceof Error) {
-        this.logger.log(error.stack ?? error.message)
-      }
-      this.action.fail(
-        format(
-          "Could not create pull request for %s into %s",
-          chalk.cyan(branch),
-          chalk.cyan(baseBranch),
-        ),
-      )
-    }
+    const tasker = new Tasker<TaskerContext>(tasks, {
+      onStatusChange: {
+        [TaskStatus.Running]: (task) =>
+          this.action.start(task.titles[TaskStatus.Running]),
+        [TaskStatus.Skipped]: (task) =>
+          this.action.warn(task.titles[TaskStatus.Skipped]),
+        [TaskStatus.Done]: (task) =>
+          this.action.succeed(task.titles[TaskStatus.Done]),
+        [TaskStatus.Failed]: (task) =>
+          this.action.fail(task.titles[TaskStatus.Failed]),
+      },
+    })
 
     console.log()
 
-    if (!isReadyForWork) {
-      this.catch(new Error("Something went wrong."))
-    }
+    await tasker.run({ issue, transition })
+
+    console.log()
 
     enum Choices {
       Skip = "Skip",
