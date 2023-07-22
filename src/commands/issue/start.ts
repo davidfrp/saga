@@ -34,17 +34,13 @@ export default class Start extends AuthenticatedCommand {
     "list-projects": Flags.boolean({
       description: "List all projects you have access to",
     }),
-    debug: Flags.boolean({
-      description:
-        "Show more information about the process, useful for debugging",
-    }),
   }
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(Start)
 
     const git = await new GitService({
-      debug: flags.debug,
+      executor: this.execute,
     }).checkRequirements()
 
     if (await git.hasUncommittedChanges()) {
@@ -66,9 +62,8 @@ export default class Start extends AuthenticatedCommand {
       const projects = await jira.listProjects()
 
       if (projects.length === 1) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        projectKey = projects.at(0)!.key
-        this.log(
+        projectKey = projects[0].key
+        console.log(
           `${chalk.yellow("!")} ${format(
             "Using %s as project since there are no other projects to choose from.",
             chalk.cyan(projectKey),
@@ -82,7 +77,7 @@ export default class Start extends AuthenticatedCommand {
       this.store.set("project", projectKey)
 
       if (!flags["list-projects"] && projects.length > 1) {
-        this.log(
+        console.log(
           `${format(
             "You can view and select a different project at any time by adding the %s flag",
             chalk.bold("--list-projects"),
@@ -100,11 +95,13 @@ export default class Start extends AuthenticatedCommand {
       try {
         issue = await jira.findIssue(args.id)
       } catch (error) {
-        if (flags.debug) console.error(error)
+        if (error instanceof Error) {
+          this.logger.log(error.stack ?? error.message)
+        }
       }
 
       if (!issue) {
-        this.log(
+        console.log(
           `${chalk.yellow("!")} ${format(
             "Unable to find an issue with id %s",
             chalk.cyan(args.id),
@@ -119,7 +116,8 @@ export default class Start extends AuthenticatedCommand {
           assignee IN (currentUser()) OR
           assignee IS EMPTY
         ) AND statusCategory IN (
-          ${StatusCategory.ToDo}
+          ${StatusCategory.ToDo},
+          ${StatusCategory.InProgress}
         ) ORDER BY lastViewed DESC
       `
 
@@ -127,7 +125,9 @@ export default class Start extends AuthenticatedCommand {
       try {
         issues = await jira.findIssuesByJql(jql)
       } catch (error) {
-        if (flags.debug) console.error(error)
+        if (error instanceof Error) {
+          this.logger.log(error.stack ?? error.message)
+        }
       }
 
       issue = await askIssue(issues)
@@ -198,7 +198,7 @@ export default class Start extends AuthenticatedCommand {
           baseBranch = await git.getCurrentBranch()
         }
 
-        this.log(
+        console.log(
           `${chalk.yellow("!")} ${format(
             "Using %s as base branch since there are no other branches to choose from.",
             chalk.cyan(baseBranch),
@@ -245,44 +245,44 @@ export default class Start extends AuthenticatedCommand {
     const commitMessage =
       this.store.get("emptyCommitMessageTemplate") || pullRequestTitle
 
-    // Confirm actions
+    // // Confirm actions
 
-    const skipConfirmations = this.store.get("skipConfirmations") === "true"
-    if (!skipConfirmations) {
-      this.log(
-        `${chalk.yellow("!")} ${format(
-          "You want to transition %s to %s",
-          chalk.cyan(issue.key),
-          chalk.cyan(transition.name),
-        )}`,
-      )
+    // const skipConfirmations = this.store.get("skipConfirmations") === "true"
+    // if (!skipConfirmations) {
+    //   console.log(
+    //     `${chalk.yellow("!")} ${format(
+    //       "You want to transition %s to %s",
+    //       chalk.cyan(issue.key),
+    //       chalk.cyan(transition.name),
+    //     )}`,
+    //   )
 
-      if (shouldAssignToUser) {
-        this.log(
-          `${chalk.yellow("!")} ${format(
-            "You want to be assigned %s",
-            chalk.cyan(issue.key),
-          )}`,
-        )
-      }
+    //   if (shouldAssignToUser) {
+    //     console.log(
+    //       `${chalk.yellow("!")} ${format(
+    //         "You want to be assigned %s",
+    //         chalk.cyan(issue.key),
+    //       )}`,
+    //     )
+    //   }
 
-      this.log(
-        `${chalk.yellow("!")} ${format(
-          "You want a pull request for %s into %s",
-          chalk.cyan(branch),
-          chalk.cyan(baseBranch),
-        )}`,
-      )
+    //   console.log(
+    //     `${chalk.yellow("!")} ${format(
+    //       "You want a pull request for %s into %s",
+    //       chalk.cyan(branch),
+    //       chalk.cyan(baseBranch),
+    //     )}`,
+    //   )
 
-      const shouldContinue = await askConfirmation()
-      if (!shouldContinue) this.exit(0)
-    }
+    //   const shouldContinue = await askConfirmation()
+    //   if (!shouldContinue) this.exit(0)
+    // }
 
     // Submit
 
     let isReadyForWork = true
 
-    this.log()
+    console.log()
 
     this.action.start(format("Switching branch to %s", chalk.cyan(branch)))
 
@@ -324,7 +324,9 @@ export default class Start extends AuthenticatedCommand {
         )
       } catch (error) {
         isReadyForWork = false
-        if (flags.debug) console.error(error)
+        if (error instanceof Error) {
+          this.logger.log(error.stack ?? error.message)
+        }
         this.action.fail(
           format(
             "Could not assign issue %s to %s",
@@ -365,7 +367,9 @@ export default class Start extends AuthenticatedCommand {
       }
     } catch (error) {
       isReadyForWork = false
-      if (flags.debug) console.error(error)
+      if (error instanceof Error) {
+        this.logger.log(error.stack ?? error.message)
+      }
       this.action.fail(
         format(
           "Could not transition issue %s to %s",
@@ -395,7 +399,9 @@ export default class Start extends AuthenticatedCommand {
       this.action.succeed("Created pull request")
     } catch (error) {
       isReadyForWork = false
-      if (flags.debug) console.error(error)
+      if (error instanceof Error) {
+        this.logger.log(error.stack ?? error.message)
+      }
       this.action.fail(
         format(
           "Could not create pull request for %s into %s",
@@ -405,47 +411,39 @@ export default class Start extends AuthenticatedCommand {
       )
     }
 
-    this.log()
+    console.log()
 
-    if (isReadyForWork) {
-      enum Choices {
-        Skip = "Skip",
-        OpenPullRequest = "Open pull request in browser",
-        OpenIssue = "Open issue in browser",
-        OpenBoth = "Open issue and pull request in browser",
-      }
-
-      const choice = await askChoice("What's next?", [
-        Choices.Skip,
-        Choices.OpenPullRequest,
-        Choices.OpenIssue,
-        Choices.OpenBoth,
-      ])
-
-      switch (choice) {
-        case Choices.OpenPullRequest:
-          this.open(await git.getPullRequestUrl())
-          break
-        case Choices.OpenIssue:
-          this.open(issue.url)
-          break
-        case Choices.OpenBoth:
-          this.open(await git.getPullRequestUrl())
-          this.open(issue.url)
-          break
-      }
-    } else {
-      let message = `${chalk.yellow("!")} Something went wrong.`
-      if (!flags.debug) {
-        message += format(
-          " You can run the command with the %s flag to get more information.",
-          chalk.bold("--debug"),
-        )
-      }
-
-      this.log(message)
+    if (!isReadyForWork) {
+      this.catch(new Error("Something went wrong."))
     }
 
-    this.log()
+    enum Choices {
+      Skip = "Skip",
+      OpenPullRequest = "Open pull request in browser",
+      OpenIssue = "Open issue in browser",
+      OpenBoth = "Open issue and pull request in browser",
+    }
+
+    const choice = await askChoice("What's next?", [
+      Choices.Skip,
+      Choices.OpenPullRequest,
+      Choices.OpenIssue,
+      Choices.OpenBoth,
+    ])
+
+    switch (choice) {
+      case Choices.OpenPullRequest:
+        this.open(await git.getPullRequestUrl())
+        break
+      case Choices.OpenIssue:
+        this.open(issue.url)
+        break
+      case Choices.OpenBoth:
+        this.open(await git.getPullRequestUrl())
+        this.open(issue.url)
+        break
+    }
+
+    console.log()
   }
 }

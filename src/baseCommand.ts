@@ -2,9 +2,10 @@ import { Command } from "@oclif/core"
 import { CommandError } from "@oclif/core/lib/interfaces/errors.js"
 import { ExitError } from "@oclif/core/lib/errors/index.js"
 import chalk from "chalk"
-import shelljs from "shelljs"
+import shelljs, { ExecOutputReturnValue } from "shelljs"
 import ora, { Ora } from "ora"
 import { Store } from "./store/store.js"
+import Logger from "./logger.js"
 
 interface StoreKeys {
   email: string
@@ -104,6 +105,7 @@ const config = new Store<StoreKeys, AuthStoreKeys>(
 
 export abstract class BaseCommand extends Command {
   private spinner: Ora = ora({ spinner: "dots2" })
+  readonly logger = new Logger("crash.log")
 
   get store(): Store<StoreKeys, AuthStoreKeys> {
     return config
@@ -130,6 +132,21 @@ export abstract class BaseCommand extends Command {
     }
   }
 
+  execute(command: string): Promise<ExecOutputReturnValue> {
+    return new Promise((resolve) => {
+      this.logger.log(command)
+      shelljs.exec(command, (code, stdout, stderr) => {
+        this.logger.log(stdout)
+        this.logger.log(stderr)
+        resolve({
+          code,
+          stdout,
+          stderr,
+        })
+      })
+    })
+  }
+
   /**
    * Opens the given URL in the default browser.
    * @param url The URL to open.
@@ -150,7 +167,7 @@ export abstract class BaseCommand extends Command {
         break
     }
 
-    shelljs.exec(command, { silent: true })
+    this.execute(command)
   }
 
   protected async catch(error: CommandError) {
@@ -158,6 +175,14 @@ export abstract class BaseCommand extends Command {
 
     if (error instanceof ExitError) return
 
-    console.error(`${chalk.red("✗")} ${error.message}`)
+    this.logger.log(error.stack ?? error.message)
+    this.logger.persist()
+
+    console.log(
+      `${chalk.yellow(
+        "!",
+      )} Something went wrong. A crash log has been created for you.`,
+    )
+    console.log(`  ${this.logger.filePath}`)
   }
 }

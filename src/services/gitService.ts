@@ -1,5 +1,3 @@
-import shelljs, { ExecOutputReturnValue } from "shelljs"
-const { exec, config: shelljsConfig } = shelljs
 import chalk from "chalk"
 
 export type CreatePullRequestOptions = {
@@ -52,22 +50,6 @@ function sortAndGroup(data: { name: string; date: Date }[]): string[] {
   return uniqueNames
 }
 
-function execAsync(command: string): Promise<ExecOutputReturnValue> {
-  return new Promise((resolve) => {
-    exec(command, (code, stdout, stderr) => {
-      resolve({
-        code,
-        stdout,
-        stderr,
-      })
-    })
-  })
-}
-
-export type GitServiceOptions = {
-  debug?: boolean
-}
-
 export class GitServiceError extends Error {
   constructor(message: string) {
     super(message)
@@ -108,10 +90,19 @@ export class GitHubCliUnauthenticatedError extends GitServiceError {
   }
 }
 
+type Executor = (
+  command: string,
+) => Promise<{ code: number; stdout: string; stderr: string }>
+
+export type GitServiceOptions = {
+  executor: Executor
+}
+
 export default class GitService {
-  constructor(options?: GitServiceOptions) {
-    shelljsConfig.silent = !options?.debug
-    shelljsConfig.verbose = Boolean(options?.debug)
+  private execute: Executor
+
+  constructor(options: GitServiceOptions) {
+    this.execute = options.executor
   }
 
   async checkRequirements(): Promise<this> {
@@ -128,22 +119,22 @@ export default class GitService {
   }
 
   private async isGitInstalled(): Promise<boolean> {
-    const { stdout: gitVersion } = await execAsync("git --version")
+    const { stdout: gitVersion } = await this.execute("git --version")
     return gitVersion.includes("git version")
   }
 
   private async isGitHubCliInstalled(): Promise<boolean> {
-    const { stdout: githubCliVersion } = await execAsync("gh --version")
+    const { stdout: githubCliVersion } = await this.execute("gh --version")
     return githubCliVersion.includes("gh version")
   }
 
   private async isGitHubCliAuthenticated(): Promise<boolean> {
-    const { code } = await execAsync("gh auth status")
+    const { code } = await this.execute("gh auth status")
     return code === 0
   }
 
   private async isInGitRepository(): Promise<boolean> {
-    const { code } = await execAsync("git rev-parse --is-inside-work-tree")
+    const { code } = await this.execute("git rev-parse --is-inside-work-tree")
     return code === 0
   }
 
@@ -153,16 +144,27 @@ export default class GitService {
 
   async commit(
     message: string,
-    options: { allowEmpty: boolean },
+    options?: { allowEmpty?: boolean; noVerify?: boolean },
   ): Promise<boolean> {
-    const { code } = await execAsync(
-      `git commit ${options.allowEmpty ? "--allow-empty " : ""}-m "${message}"`,
+    const flags: string[] = []
+
+    if (options?.allowEmpty) {
+      flags.push("--allow-empty")
+    }
+
+    if (options?.noVerify) {
+      flags.push("--no-verify")
+    }
+
+    const { code } = await this.execute(
+      `git commit ${flags.join(" ")} -m "${message}"`,
     )
+
     return code === 0
   }
 
   async doesOpenPrExist(head: string, base: string): Promise<boolean> {
-    const { stdout: json } = await execAsync(
+    const { stdout: json } = await this.execute(
       `gh pr list --json baseRefName,headRefName,state`,
     )
 
@@ -192,17 +194,28 @@ export default class GitService {
     const reviewers = options.reviewers || []
 
     if (options.pushEmptyCommit) {
-      await this.commit(options.commitMessage, { allowEmpty: true })
+      await this.commit(options.commitMessage, {
+        allowEmpty: true,
+        noVerify: true,
+      })
       await this.push()
     }
 
-    const command = `gh pr create --title "${title}" --body "${body}" ${
-      options.isDraft ? "--draft" : ""
-    } --base ${baseBranch} --head ${branch} ${
-      reviewers.length > 0 ? `--reviewer ${reviewers.join(" --reviewer ")}` : ""
-    }`
+    const flags: string[] = []
 
-    const { code, stderr } = await execAsync(command)
+    if (options.isDraft) {
+      flags.push("--draft")
+    }
+
+    if (reviewers.length > 0) {
+      flags.push(`--reviewer ${reviewers.join(" --reviewer ")}`)
+    }
+
+    const { code, stderr } = await this.execute(
+      `gh pr create --title "${title}" --body "${body}" --base ${baseBranch} --head ${branch} ${flags.join(
+        " ",
+      )}`,
+    )
 
     if (code !== 0) {
       if (options.isDraft && stderr.toLowerCase().includes("draft")) {
@@ -218,32 +231,32 @@ export default class GitService {
   }
 
   async setUpstream(branch: string, remote: string): Promise<void> {
-    await execAsync(`git push --set-upstream ${remote} ${branch}`)
+    await this.execute(`git push --set-upstream ${remote} ${branch}`)
   }
 
   async createBranch(branch: string, startingPoint?: string): Promise<void> {
-    await execAsync(`git branch ${branch} ${startingPoint || ""}`)
+    await this.execute(`git branch ${branch} ${startingPoint || ""}`)
   }
 
   async branchExists(branch: string): Promise<boolean> {
-    const { stdout: branches } = await execAsync("git branch")
+    const { stdout: branches } = await this.execute("git branch")
     return Boolean(branches.includes(branch))
   }
 
   async doesPullRequestExist(branch?: string): Promise<boolean> {
-    const { code } = await execAsync(`gh pr view ${branch || ""}`)
+    const { code } = await this.execute(`gh pr view ${branch || ""}`)
     return code === 0
   }
 
   async getCurrentBranch(): Promise<string> {
-    const { stdout: branch } = await execAsync(
+    const { stdout: branch } = await this.execute(
       "git rev-parse --abbrev-ref HEAD",
     )
     return branch.trim()
   }
 
   async getRemoteBranches(): Promise<string[]> {
-    const { stdout } = await execAsync("git branch -r")
+    const { stdout } = await this.execute("git branch -r")
 
     const branches = stdout
       .split("\n")
@@ -254,50 +267,52 @@ export default class GitService {
   }
 
   async fetch({ prune }: { prune: boolean }): Promise<void> {
-    await execAsync(`git fetch ${prune ? "--prune" : ""}`)
+    await this.execute(`git fetch ${prune ? "--prune" : ""}`)
   }
 
   async checkoutBranch(branch: string): Promise<void> {
-    await execAsync(`git checkout ${branch}`)
+    await this.execute(`git checkout ${branch}`)
   }
 
   async viewPullRequestOnWeb(): Promise<void> {
-    await execAsync(`gh pr view --web`)
+    await this.execute(`gh pr view --web`)
   }
 
   async getPullRequestUrl(): Promise<string> {
-    const { stdout: json } = await execAsync("gh pr view --json url")
+    const { stdout: json } = await this.execute("gh pr view --json url")
     return JSON.parse(json).url
   }
 
   async markAsReady(): Promise<void> {
-    await execAsync("gh pr ready")
+    await this.execute("gh pr ready")
   }
 
   async markAsDraft(): Promise<void> {
-    await execAsync("gh pr ready --undo")
+    await this.execute("gh pr ready --undo")
   }
 
   async hasUncommittedChanges(): Promise<boolean> {
-    const { stdout: changes } = await execAsync("git status --porcelain")
+    const { stdout: changes } = await this.execute("git status --porcelain")
     return Boolean(changes)
   }
 
   async push(): Promise<void> {
-    await execAsync("git push")
+    await this.execute("git push")
   }
 
   async pull(): Promise<void> {
-    await execAsync("git pull")
+    await this.execute("git pull")
   }
 
   async isBranchNameValid(branch: string): Promise<boolean> {
-    const { code } = await execAsync(`git check-ref-format --branch ${branch}`)
+    const { code } = await this.execute(
+      `git check-ref-format --branch ${branch}`,
+    )
     return code === 0
   }
 
   async getPopularBaseBranches(): Promise<string[]> {
-    const { stdout: json } = await execAsync(
+    const { stdout: json } = await this.execute(
       "gh pr list --state all --limit 100 --json baseRefName,mergedAt,updatedAt",
     )
 

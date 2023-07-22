@@ -1,4 +1,4 @@
-import { Flags } from "@oclif/core"
+// import { Flags } from "@oclif/core"
 import { format } from "util"
 import chalk from "chalk"
 import { AuthenticatedCommand } from "../../authenticatedCommand.js"
@@ -10,22 +10,25 @@ import { askTransition, askChoice } from "../../prompts/index.js"
 export default class Ready extends AuthenticatedCommand {
   static summary = "Mark an issue as ready for review"
 
-  // TODO add --reviewer -r flag.
-  // TODO add --undo flag.
   static flags = {
-    debug: Flags.boolean({
-      description:
-        "Show more information about the process, useful for debugging",
-    }),
+    // reviewer: Flags.string({
+    //   char: "r",
+    //   description: "Reviewers to add to the pull request, separated by commas",
+    // }),
+    // undo: Flags.boolean({
+    //   char: "u",
+    //   description:
+    //     "Mark the pull request as a draft and transition the issue to the working status",
+    // }),
   }
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(Ready)
+    // const { flags } = await this.parse(Ready)
 
     this.action.start()
 
     const git = await new GitService({
-      debug: flags.debug,
+      executor: this.execute,
     }).checkRequirements()
 
     const pullRequestExist = await git.doesPullRequestExist()
@@ -121,7 +124,9 @@ export default class Ready extends AuthenticatedCommand {
       }
     } catch (error) {
       isReadyForReview = false
-      if (flags.debug) console.error(error)
+      if (error instanceof Error) {
+        this.logger.log(error.stack ?? error.message)
+      }
       this.action.fail(
         format(
           "Could not transition %s to %s",
@@ -137,7 +142,9 @@ export default class Ready extends AuthenticatedCommand {
       this.action.succeed("Marked pull request as ready for review")
     } catch (error) {
       isReadyForReview = false
-      if (flags.debug) console.error(error)
+      if (error instanceof Error) {
+        this.logger.log(error.stack ?? error.message)
+      }
       this.action.fail("Could not mark pull request as ready for review")
     }
 
