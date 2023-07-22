@@ -37,6 +37,11 @@ export default class JiraService {
     issue.fields.issuetype.color = await this.colorFromSvg(
       issue.fields.issuetype.iconUrl,
     )
+
+    if (issue.fields.lastViewed) {
+      issue.fields.lastViewed = new Date(issue.fields.lastViewed)
+    }
+
     return issue
   }
 

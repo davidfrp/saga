@@ -24,6 +24,7 @@ export type Issue = {
   fields: {
     summary: string
     assignee?: User
+    lastViewed?: Date
     issuetype: {
       name: string
       iconUrl: string

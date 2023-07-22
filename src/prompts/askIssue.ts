@@ -23,6 +23,7 @@ export default async function (issues: Issue[]): Promise<Issue> {
             )
           },
           (issue) => issue.fields.status.name,
+          (issue) => issue.fields.assignee?.emailAddress.split("@")[0] ?? "",
           (issue) => issue.fields.summary,
         ],
         columnSpacing: 2,

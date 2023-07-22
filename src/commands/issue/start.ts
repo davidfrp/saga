@@ -135,6 +135,33 @@ export default class Start extends AuthenticatedCommand {
         }
       }
 
+      issues.sort((a, b) => {
+        const aCategory = a.fields.status.statusCategory.key
+        const bCategory = b.fields.status.statusCategory.key
+
+        if (aCategory === bCategory) {
+          if (a.fields.assignee && !b.fields.assignee) {
+            return -1
+          }
+
+          if (!a.fields.assignee && b.fields.assignee) {
+            return 1
+          }
+
+          return 0
+        }
+
+        if (aCategory === StatusCategory.ToDo) {
+          return -1
+        }
+
+        if (bCategory === StatusCategory.ToDo) {
+          return 1
+        }
+
+        return 0
+      })
+
       this.action.stop()
 
       issue = await askIssue(issues)
@@ -315,17 +342,17 @@ export default class Start extends AuthenticatedCommand {
       tasks.push({
         titles: {
           [TaskStatus.Running]: format(
-            "Assigning issue %s to %s",
+            "Assigning %s to %s",
             chalk.cyan(issue.key),
             chalk.cyan(email),
           ),
           [TaskStatus.Done]: format(
-            "Assigned issue %s to %s",
+            "Assigned %s to %s",
             chalk.cyan(issue.key),
             chalk.cyan(email),
           ),
           [TaskStatus.Failed]: format(
-            "Could not assign issue %s to %s",
+            "Could not assign %s to %s",
             chalk.cyan(issue.key),
             chalk.cyan(email),
           ),
@@ -341,23 +368,23 @@ export default class Start extends AuthenticatedCommand {
       {
         titles: {
           [TaskStatus.Running]: format(
-            "Transitioning issue %s to %s",
+            "Transitioning %s to %s",
             chalk.cyan(issue.key),
             chalk.cyan(transition.name),
           ),
           [TaskStatus.Skipped]: format(
-            "Skipped transitioning issue %s to %s",
+            "Skipped transition. %s is already in %s",
             chalk.cyan(issue.key),
             chalk.cyan(transition.name),
           ),
           [TaskStatus.Done]: format(
-            "Transitioned issue %s from %s to %s",
+            "Transitioned %s from %s to %s",
             chalk.cyan(issue.key),
             chalk.cyan(issue.fields.status.name),
             chalk.cyan(transition.name),
           ),
           [TaskStatus.Failed]: format(
-            "Could not transition issue %s to %s",
+            "Could not transition %s to %s",
             chalk.cyan(issue.key),
             chalk.cyan(transition.name),
           ),

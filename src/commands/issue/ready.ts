@@ -102,12 +102,12 @@ export default class Ready extends AuthenticatedCommand {
               chalk.cyan(transition.name),
             ),
             [TaskStatus.Skipped]: format(
-              "Skipped transition. Issue %s is already in %s",
+              "Skipped transition. %s is already in %s",
               chalk.cyan(issue.key),
               chalk.cyan(transition.name),
             ),
             [TaskStatus.Done]: format(
-              "Transitioned issue %s from %s to %s",
+              "Transitioned %s from %s to %s",
               chalk.cyan(issue.key),
               chalk.cyan(issue.fields.status.name),
               chalk.cyan(transition.name),
