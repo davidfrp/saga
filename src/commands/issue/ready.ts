@@ -2,7 +2,10 @@
 import { format } from "util"
 import chalk from "chalk"
 import { AuthenticatedCommand } from "../../authenticatedCommand.js"
-import GitService from "../../services/gitService.js"
+import {
+  GitService,
+  NoPullRequestForBranchError,
+} from "../../services/gitService.js"
 import JiraService from "../../services/jiraService.js"
 import { StatusCategory, Transition } from "../../@types/atlassian.js"
 import { askTransition, askChoice } from "../../prompts/index.js"
@@ -28,21 +31,12 @@ export default class Ready extends AuthenticatedCommand {
     this.action.start()
 
     const git = await new GitService({
-      executor: this.execute,
+      executor: this.exec,
     }).checkRequirements()
 
     const pullRequestExist = await git.doesPullRequestExist()
     if (!pullRequestExist) {
-      this.action.stop()
-      console.log(`${chalk.red("✗")} There is no pull request for this branch`)
-      return this.exit(1)
-    }
-
-    const hasUncommittedChanges = await git.hasUncommittedChanges()
-    if (hasUncommittedChanges) {
-      this.action.stop()
-      console.log(`${chalk.red("✗")} You have uncommitted changes`)
-      return this.exit(1)
+      throw new NoPullRequestForBranchError()
     }
 
     await git.pull()

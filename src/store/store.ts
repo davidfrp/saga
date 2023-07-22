@@ -60,7 +60,7 @@ export class Store<StoreOptionsT, AuthStoreOptionsT>
 {
   readonly options: DefaultStoreOptions<StoreOptionsT>[]
 
-  private filePath = `${homedir()}/.config/saga/config.json`
+  private readonly file = `${homedir()}/.config/saga/config.json`
   private values: StoreOptionsT
 
   private authStore: AuthStore<AuthStoreOptionsT>
@@ -104,14 +104,14 @@ export class Store<StoreOptionsT, AuthStoreOptionsT>
   }
 
   private read(): StoreOptionsT {
-    if (!fs.existsSync(this.filePath)) {
-      fs.mkdirSync(dirname(this.filePath), { recursive: true })
-      fs.writeFileSync(this.filePath, "{}", "utf8")
+    if (!fs.existsSync(this.file)) {
+      fs.mkdirSync(dirname(this.file), { recursive: true })
+      fs.writeFileSync(this.file, "{}", "utf8")
       return {} as StoreOptionsT
     }
 
     try {
-      const fileContents = fs.readFileSync(this.filePath, "utf8")
+      const fileContents = fs.readFileSync(this.file, "utf8")
       return JSON.parse(fileContents) as StoreOptionsT
     } catch (error) {
       console.error(`Error loading config file: ${error}`)
@@ -121,6 +121,6 @@ export class Store<StoreOptionsT, AuthStoreOptionsT>
 
   private write(): void {
     const data = JSON.stringify(this.values, null, 2)
-    fs.writeFileSync(this.filePath, data, "utf8")
+    fs.writeFileSync(this.file, data, "utf8")
   }
 }

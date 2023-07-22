@@ -1,16 +1,12 @@
 import chalk from "chalk"
 
 export type CreatePullRequestOptions = {
-  commitMessage: string
-  pushEmptyCommit?: boolean
+  title: string
+  body: string
+  head?: string
+  base?: string
   isDraft?: boolean
-  sourceBranch?: string
-  targetBranch?: string
   reviewers?: string[]
-}
-
-export type CheckoutOptions = {
-  startingPoint?: string
 }
 
 const startOfWeek = (date: Date): Date => {
@@ -57,6 +53,21 @@ export class GitServiceError extends Error {
   }
 }
 
+export class NoPullRequestForBranchError extends GitServiceError {
+  constructor() {
+    super(`No pull request found for current branch`)
+    this.name = "NoPullRequestForBranchError"
+  }
+}
+
+export class UncommittedChangesError extends GitServiceError {
+  constructor() {
+    super(`Uncommitted changes found.
+  Commit or stash your changes before continuing.`)
+    this.name = "UncommittedChangesError"
+  }
+}
+
 export class GitMissingError extends GitServiceError {
   constructor() {
     super(`Git is not installed
@@ -98,43 +109,59 @@ export type GitServiceOptions = {
   executor: Executor
 }
 
-export default class GitService {
-  private execute: Executor
+export class GitService {
+  private exec: Executor
 
   constructor(options: GitServiceOptions) {
-    this.execute = options.executor
+    this.exec = options.executor
   }
 
   async checkRequirements(): Promise<this> {
-    if (!(await this.isGitInstalled())) throw new GitMissingError()
+    const assertGitReady = async () => {
+      if (!(await this.isGitInstalled())) throw new GitMissingError()
 
-    if (!(await this.isInGitRepository())) throw new NotInGitRepositoryError()
+      return Promise.all([
+        async () => {
+          if (!(await this.isInGitRepository()))
+            throw new NotInGitRepositoryError()
+        },
+        async () => {
+          if (await this.hasUncommittedChanges())
+            throw new UncommittedChangesError()
+        },
+      ])
+    }
 
-    if (!(await this.isGitHubCliInstalled())) throw new GitHubCliMissingError()
+    const assertGitHubCliReady = async () => {
+      if (!(await this.isGitHubCliInstalled()))
+        throw new GitHubCliMissingError()
 
-    if (!(await this.isGitHubCliAuthenticated()))
-      throw new GitHubCliUnauthenticatedError()
+      if (!(await this.isGitHubCliAuthenticated()))
+        throw new GitHubCliUnauthenticatedError()
+    }
+
+    await Promise.all([assertGitReady(), assertGitHubCliReady()])
 
     return this
   }
 
   private async isGitInstalled(): Promise<boolean> {
-    const { stdout: gitVersion } = await this.execute("git --version")
+    const { stdout: gitVersion } = await this.exec("git --version")
     return gitVersion.includes("git version")
   }
 
   private async isGitHubCliInstalled(): Promise<boolean> {
-    const { stdout: githubCliVersion } = await this.execute("gh --version")
+    const { stdout: githubCliVersion } = await this.exec("gh --version")
     return githubCliVersion.includes("gh version")
   }
 
   private async isGitHubCliAuthenticated(): Promise<boolean> {
-    const { code } = await this.execute("gh auth status")
+    const { code } = await this.exec("gh auth status")
     return code === 0
   }
 
   private async isInGitRepository(): Promise<boolean> {
-    const { code } = await this.execute("git rev-parse --is-inside-work-tree")
+    const { code } = await this.exec("git rev-parse --is-inside-work-tree")
     return code === 0
   }
 
@@ -156,15 +183,23 @@ export default class GitService {
       flags.push("--no-verify")
     }
 
-    const { code } = await this.execute(
+    const { code } = await this.exec(
       `git commit ${flags.join(" ")} -m "${message}"`,
     )
 
     return code === 0
   }
 
+  async getCommitsBetween(from: string, to: string): Promise<string[]> {
+    const { stdout: commits } = await this.exec(
+      `git log --pretty=format:"%s" ${from}..${to}`,
+    )
+
+    return commits.split("\n").filter(Boolean)
+  }
+
   async doesOpenPrExist(head: string, base: string): Promise<boolean> {
-    const { stdout: json } = await this.execute(
+    const { stdout: json } = await this.exec(
       `gh pr list --json baseRefName,headRefName,state`,
     )
 
@@ -182,26 +217,27 @@ export default class GitService {
     return openPrExists
   }
 
-  async createPullRequest(
-    title: string,
-    body: string,
-    options: CreatePullRequestOptions,
-  ): Promise<void> {
-    const branch = options.sourceBranch || (await this.getCurrentBranch())
+  async createPullRequest(options: CreatePullRequestOptions): Promise<void> {
+    const branch = options.head || (await this.getCurrentBranch())
 
-    const baseBranch = options.targetBranch || branch
+    const baseBranch = options.base || branch
 
     const reviewers = options.reviewers || []
 
-    if (options.pushEmptyCommit) {
-      await this.commit(options.commitMessage, {
-        allowEmpty: true,
-        noVerify: true,
-      })
-      await this.push()
-    }
+    // if (options.pushEmptyCommit) {
+    //   await this.commit(options.commitMessage, {
+    //     allowEmpty: true,
+    //     noVerify: true,
+    //   })
+    //   await this.push()
+    // }
 
-    const flags: string[] = []
+    const flags: string[] = [
+      `--title "${options.title}"`,
+      `--body "${options.body}"`,
+      `--base ${baseBranch}`,
+      `--head ${branch}`,
+    ]
 
     if (options.isDraft) {
       flags.push("--draft")
@@ -211,17 +247,12 @@ export default class GitService {
       flags.push(`--reviewer ${reviewers.join(" --reviewer ")}`)
     }
 
-    const { code, stderr } = await this.execute(
-      `gh pr create --title "${title}" --body "${body}" --base ${baseBranch} --head ${branch} ${flags.join(
-        " ",
-      )}`,
-    )
+    const { code, stderr } = await this.exec(`gh pr create ${flags.join(" ")}`)
 
     if (code !== 0) {
       if (options.isDraft && stderr.toLowerCase().includes("draft")) {
-        return this.createPullRequest(title, body, {
+        return this.createPullRequest({
           ...options,
-          pushEmptyCommit: false,
           isDraft: false,
         })
       }
@@ -231,32 +262,32 @@ export default class GitService {
   }
 
   async setUpstream(branch: string, remote: string): Promise<void> {
-    await this.execute(`git push --set-upstream ${remote} ${branch}`)
+    await this.exec(`git push --set-upstream ${remote} ${branch}`)
   }
 
   async createBranch(branch: string, startingPoint?: string): Promise<void> {
-    await this.execute(`git branch ${branch} ${startingPoint || ""}`)
+    await this.exec(`git branch ${branch} ${startingPoint || ""}`)
   }
 
   async branchExists(branch: string): Promise<boolean> {
-    const { stdout: branches } = await this.execute("git branch")
+    const { stdout: branches } = await this.exec("git branch")
     return Boolean(branches.includes(branch))
   }
 
   async doesPullRequestExist(branch?: string): Promise<boolean> {
-    const { code } = await this.execute(`gh pr view ${branch || ""}`)
+    const { code } = await this.exec(`gh pr view ${branch || ""}`)
     return code === 0
   }
 
   async getCurrentBranch(): Promise<string> {
-    const { stdout: branch } = await this.execute(
+    const { stdout: branch } = await this.exec(
       "git rev-parse --abbrev-ref HEAD",
     )
     return branch.trim()
   }
 
   async getRemoteBranches(): Promise<string[]> {
-    const { stdout } = await this.execute("git branch -r")
+    const { stdout } = await this.exec("git branch -r")
 
     const branches = stdout
       .split("\n")
@@ -267,52 +298,50 @@ export default class GitService {
   }
 
   async fetch({ prune }: { prune: boolean }): Promise<void> {
-    await this.execute(`git fetch ${prune ? "--prune" : ""}`)
+    await this.exec(`git fetch ${prune ? "--prune" : ""}`)
   }
 
   async checkoutBranch(branch: string): Promise<void> {
-    await this.execute(`git checkout ${branch}`)
+    await this.exec(`git checkout ${branch}`)
   }
 
   async viewPullRequestOnWeb(): Promise<void> {
-    await this.execute(`gh pr view --web`)
+    await this.exec(`gh pr view --web`)
   }
 
   async getPullRequestUrl(): Promise<string> {
-    const { stdout: json } = await this.execute("gh pr view --json url")
+    const { stdout: json } = await this.exec("gh pr view --json url")
     return JSON.parse(json).url
   }
 
   async markAsReady(): Promise<void> {
-    await this.execute("gh pr ready")
+    await this.exec("gh pr ready")
   }
 
   async markAsDraft(): Promise<void> {
-    await this.execute("gh pr ready --undo")
+    await this.exec("gh pr ready --undo")
   }
 
   async hasUncommittedChanges(): Promise<boolean> {
-    const { stdout: changes } = await this.execute("git status --porcelain")
+    const { stdout: changes } = await this.exec("git status --porcelain")
     return Boolean(changes)
   }
 
   async push(): Promise<void> {
-    await this.execute("git push")
+    await this.exec("git push")
   }
 
   async pull(): Promise<void> {
-    await this.execute("git pull")
+    await this.exec("git pull")
   }
 
   async isBranchNameValid(branch: string): Promise<boolean> {
-    const { code } = await this.execute(
-      `git check-ref-format --branch ${branch}`,
-    )
+    const { code } = await this.exec(`git check-ref-format --branch ${branch}`)
     return code === 0
   }
 
   async getPopularBaseBranches(): Promise<string[]> {
-    const { stdout: json } = await this.execute(
+    const { stdout: json } = await this.exec(
       "gh pr list --state all --limit 100 --json baseRefName,mergedAt,updatedAt",
     )
 

@@ -3,7 +3,7 @@ import { Args, Flags } from "@oclif/core"
 import chalk from "chalk"
 import doT from "dot"
 import { AuthenticatedCommand } from "../../authenticatedCommand.js"
-import GitService from "../../services/gitService.js"
+import { GitService } from "../../services/gitService.js"
 import JiraService from "../../services/jiraService.js"
 import {
   Issue,
@@ -19,7 +19,6 @@ import {
   askBranchName,
   askBaseBranch,
   askPrTitle,
-  askConfirmation,
   askChoice,
 } from "../../prompts/index.js"
 
@@ -37,15 +36,13 @@ export default class Start extends AuthenticatedCommand {
   }
 
   async run(): Promise<void> {
+    this.action.start()
+
     const { args, flags } = await this.parse(Start)
 
     const git = await new GitService({
-      executor: this.execute,
+      executor: this.exec,
     }).checkRequirements()
-
-    if (await git.hasUncommittedChanges()) {
-      throw new Error("Stash or commit your changes before starting an issue.")
-    }
 
     const host = this.store.get("jiraHostname")
     const email = this.store.get("email")
@@ -60,6 +57,8 @@ export default class Start extends AuthenticatedCommand {
     let projectKey = this.store.get("project")
     if (!projectKey || flags["list-projects"]) {
       const projects = await jira.listProjects()
+
+      this.action.stop()
 
       if (projects.length === 1) {
         projectKey = projects[0].key
@@ -130,11 +129,14 @@ export default class Start extends AuthenticatedCommand {
         }
       }
 
+      this.action.stop()
+
       issue = await askIssue(issues)
     }
 
     let shouldAssignToUser = false
     if (issue.fields.assignee?.emailAddress !== email) {
+      this.action.stop()
       shouldAssignToUser = await askAssignYou()
     }
 
@@ -154,6 +156,7 @@ export default class Start extends AuthenticatedCommand {
     }
 
     if (!transition) {
+      this.action.stop()
       transition = await askTransition(filteredTransitions)
       this.store.set("workingStatus", transition.name)
     }
@@ -165,6 +168,8 @@ export default class Start extends AuthenticatedCommand {
     const defaultBranchName = doT.template(branchNameTemplate, {
       argName: ["issue"],
     })({ issue })
+
+    this.action.stop()
 
     const branch = await askBranchName(defaultBranchName, (value: string) => {
       if (!branchNamePattern?.test(value)) {
@@ -388,11 +393,18 @@ export default class Start extends AuthenticatedCommand {
         ),
       )
 
-      await git.createPullRequest(pullRequestTitle, prBody, {
-        sourceBranch: branch,
-        targetBranch: baseBranch,
-        commitMessage,
-        pushEmptyCommit: true,
+      const commits = await git.getCommitsBetween(baseBranch, branch)
+
+      if (commits.length === 0) {
+        await git.commit(commitMessage, { allowEmpty: true, noVerify: true })
+        await git.push()
+      }
+
+      await git.createPullRequest({
+        head: branch,
+        base: baseBranch,
+        body: prBody,
+        title: pullRequestTitle,
         isDraft: true,
       })
 

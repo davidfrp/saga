@@ -5,8 +5,9 @@ import chalk from "chalk"
 import shelljs, { ExecOutputReturnValue } from "shelljs"
 import ora, { Ora } from "ora"
 import { Store } from "./store/store.js"
-import Logger from "./logger.js"
 import { format } from "node:util"
+import { GitServiceError } from "./services/gitService.js"
+import { Logger } from "./logger.js"
 
 interface StoreKeys {
   email: string
@@ -106,10 +107,13 @@ const config = new Store<StoreKeys, AuthStoreKeys>(
 
 export abstract class BaseCommand extends Command {
   private spinner: Ora = ora({ spinner: "dots2" })
-  readonly logger = new Logger("crash.log")
 
   get store(): Store<StoreKeys, AuthStoreKeys> {
     return config
+  }
+
+  get logger() {
+    return Logger
   }
 
   get action() {
@@ -117,7 +121,10 @@ export abstract class BaseCommand extends Command {
       wait: (durationInMs: number) => {
         return new Promise((resolve) => setTimeout(resolve, durationInMs))
       },
-      start: (message?: string) => this.spinner.start(message),
+      start: (message?: string) => {
+        this.spinner.stop()
+        this.spinner.start(message)
+      },
       stop: () => this.spinner.stop(),
       succeed: (message?: string) =>
         this.spinner.stopAndPersist({
@@ -133,12 +140,12 @@ export abstract class BaseCommand extends Command {
     }
   }
 
-  execute(command: string): Promise<ExecOutputReturnValue> {
+  exec(command: string): Promise<ExecOutputReturnValue> {
     return new Promise((resolve) => {
-      this.logger.log(command)
-      shelljs.exec(command, (code, stdout, stderr) => {
-        this.logger.log(stdout)
-        this.logger.log(stderr)
+      Logger.log(command)
+      shelljs.exec(command, { silent: true }, (code, stdout, stderr) => {
+        Logger.log(stdout)
+        Logger.log(stderr)
         resolve({
           code,
           stdout,
@@ -168,21 +175,26 @@ export abstract class BaseCommand extends Command {
         break
     }
 
-    this.execute(command)
+    this.exec(command)
   }
 
   protected async catch(error: CommandError) {
     this.action.stop()
 
+    if (error instanceof GitServiceError) {
+      console.log(`\n${chalk.red("✗")} ${error.message}\n`)
+      return
+    }
+
     if (error instanceof ExitError) return
 
-    this.logger.log(error.stack ?? error.message)
-    this.logger.persist()
+    Logger.log(error.stack ?? error.message)
+    Logger.persist()
 
     console.log(
       `\n${chalk.yellow("!")} ${format(
         "Something went wrong. A crash log has been generated.\n  %s",
-        this.logger.filePath,
+        Logger.file,
       )}\n`,
     )
   }
