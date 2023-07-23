@@ -118,17 +118,25 @@ export class GitService {
 
   async checkRequirements(): Promise<this> {
     const assertGitReady = async () => {
-      if (!(await this.isGitInstalled())) throw new GitMissingError()
+      if (!(await this.isGitInstalled())) {
+        throw new GitMissingError()
+      }
+
+      const assertInGitRepository = async () => {
+        if (!(await this.isInGitRepository())) {
+          throw new NotInGitRepositoryError()
+        }
+      }
+
+      const assertNoUncommittedChanges = async () => {
+        if (await this.hasUncommittedChanges()) {
+          throw new UncommittedChangesError()
+        }
+      }
 
       return Promise.all([
-        async () => {
-          if (!(await this.isInGitRepository()))
-            throw new NotInGitRepositoryError()
-        },
-        async () => {
-          if (await this.hasUncommittedChanges())
-            throw new UncommittedChangesError()
-        },
+        assertInGitRepository(),
+        assertNoUncommittedChanges(),
       ])
     }
 
