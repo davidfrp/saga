@@ -1,26 +1,27 @@
-import { format } from "util"
 import { Args, Flags } from "@oclif/core"
 import chalk from "chalk"
 import doT from "dot"
-import { AuthenticatedCommand } from "../../authenticatedCommand.js"
-import { GitService } from "../../services/gitService.js"
-import JiraService from "../../services/jiraService.js"
+import { format } from "util"
 import {
   Issue,
   Project,
   StatusCategory,
   Transition,
 } from "../../@types/atlassian.js"
+import { AuthenticatedCommand } from "../../authenticatedCommand.js"
 import {
-  askProject,
-  askIssue,
   askAssignYou,
-  askTransition,
   askBranchName,
-  askBaseBranch,
-  askPrTitle,
   askChoice,
+  askIssue,
+  askPrBaseBranch,
+  askPrTitle,
+  askProject,
+  askStartingPoint,
+  askTransition,
 } from "../../prompts/index.js"
+import { GitService } from "../../services/gitService.js"
+import JiraService from "../../services/jiraService.js"
 import { Task, TaskStatus, Tasker } from "../../tasker.js"
 
 interface TaskerContext {
@@ -225,48 +226,77 @@ export default class Start extends AuthenticatedCommand {
       ...new Set([...popularBaseBranches, ...remoteBranches]),
     ].filter((branch) => remoteBranches.includes(branch))
 
-    let baseBranch = this.store.get("baseBranch")
-    if (!baseBranch || !baseBranches.includes(baseBranch)) {
-      if (baseBranches.length > 1) {
-        baseBranch = await askBaseBranch(baseBranches)
-      } else {
-        if (baseBranches.length === 1) {
-          baseBranch = baseBranches[0]
-        } else {
-          baseBranch = await git.getCurrentBranch()
-        }
+    let prBaseBranch: string
 
-        console.log(
-          `${chalk.yellow("!")} ${format(
-            "Using %s as base branch since there are no other branches to choose from.",
-            chalk.cyan(baseBranch),
-          )}`,
-        )
+    if (baseBranches.length > 1) {
+      prBaseBranch = await askPrBaseBranch(baseBranches)
+    } else {
+      if (baseBranches.length === 1) {
+        prBaseBranch = baseBranches[0]
+      } else {
+        prBaseBranch = await git.getCurrentBranch()
       }
+
+      console.log(
+        `${chalk.yellow("!")} ${format(
+          "Using %s as base branch since there are no other branches to choose from.",
+          chalk.cyan(prBaseBranch),
+        )}`,
+      )
     }
 
     console.log(
       `${chalk.yellow("!")} ${format(
         "This will create a pull request for %s into %s",
         chalk.cyan(branch),
-        chalk.cyan(baseBranch),
+        chalk.cyan(prBaseBranch),
       )}`,
     )
+
+    await this.action.wait(200)
+
+    const askForStartingPoint = this.store.get("askForStartingPoint") === "true"
+
+    let startingPoint = prBaseBranch
+    if (askForStartingPoint) {
+      startingPoint = await askStartingPoint(
+        baseBranches.sort((a, b) => {
+          if (a === prBaseBranch) {
+            return -1
+          }
+
+          if (b === prBaseBranch) {
+            return 1
+          }
+
+          return 0
+        }),
+      )
+    } else {
+      console.log(
+        `${chalk.yellow("!")} ${format(
+          "Using the %s base branch as starting point.",
+          chalk.cyan(prBaseBranch),
+        )}`,
+      )
+    }
 
     console.log(
       `${chalk.yellow("!")} ${format(
         "%s will be based on %s",
         chalk.cyan(branch),
-        chalk.cyan(baseBranch),
+        chalk.cyan(startingPoint),
       )}`,
     )
 
-    if (await git.doesOpenPrExist(branch, baseBranch)) {
+    await this.action.wait(200)
+
+    if (await git.doesOpenPrExist(branch, prBaseBranch)) {
       console.error(
         `${chalk.red("✗")} ${format(
           "An open pull request already exists for %s into %s",
           chalk.cyan(branch),
-          chalk.cyan(baseBranch),
+          chalk.cyan(prBaseBranch),
         )}`,
       )
       this.exit(1)
@@ -317,7 +347,7 @@ export default class Start extends AuthenticatedCommand {
         },
         action: async () => {
           await git.fetch({ prune: true })
-          await git.checkoutBranch(baseBranch)
+          await git.checkoutBranch(startingPoint)
           await git.pull()
           await git.createBranch(branch)
           await git.checkoutBranch(branch)
@@ -399,17 +429,17 @@ export default class Start extends AuthenticatedCommand {
           [TaskStatus.Running]: format(
             "Creating pull request for %s into %s",
             chalk.cyan(branch),
-            chalk.cyan(baseBranch),
+            chalk.cyan(prBaseBranch),
           ),
           [TaskStatus.Done]: "Created pull request",
           [TaskStatus.Failed]: format(
             "Could not create pull request for %s into %s",
             chalk.cyan(branch),
-            chalk.cyan(baseBranch),
+            chalk.cyan(prBaseBranch),
           ),
         },
         action: async () => {
-          const commits = await git.getCommitsBetween(baseBranch, branch)
+          const commits = await git.getCommitsBetween(prBaseBranch, branch)
 
           if (commits.length === 0) {
             await git.commit(commitMessage, {
@@ -421,7 +451,7 @@ export default class Start extends AuthenticatedCommand {
 
           await git.createPullRequest({
             head: branch,
-            base: baseBranch,
+            base: prBaseBranch,
             body: prBody,
             title: pullRequestTitle,
             isDraft: true,

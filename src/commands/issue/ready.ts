@@ -8,7 +8,7 @@ import {
 } from "../../services/gitService.js"
 import JiraService from "../../services/jiraService.js"
 import { StatusCategory, Transition } from "../../@types/atlassian.js"
-import { askTransition, askChoice } from "../../prompts/index.js"
+import { askTransition, askChoice, askChecklist } from "../../prompts/index.js"
 import { TaskStatus, Tasker } from "../../tasker.js"
 
 interface TaskerContext {
@@ -85,11 +85,24 @@ export default class Ready extends AuthenticatedCommand {
       )
     }
 
-    this.action.stop()
-
     if (!transition) {
+      this.action.stop()
       transition = await askTransition(filteredTransitions)
       this.store.set("readyForReviewStatus", transition.name)
+      this.action.start()
+    }
+
+    let reviewers: string[] = []
+
+    const teamMembers = await git.getTeamMembers()
+
+    this.action.stop()
+
+    if (teamMembers && teamMembers.length > 0) {
+      reviewers = await askChecklist(
+        "Who should review this pull request?",
+        teamMembers,
+      )
     }
 
     const tasks = new Tasker<TaskerContext>(
@@ -132,6 +145,19 @@ export default class Ready extends AuthenticatedCommand {
           },
           action: () => git.markAsReady(),
         },
+        {
+          titles: {
+            [TaskStatus.Running]: "Requesting reviewers for review",
+            [TaskStatus.Skipped]: "No reviewers requested for review",
+            [TaskStatus.Done]: format(
+              "Requested %s for review",
+              chalk.cyan(reviewers.join(", ")),
+            ),
+            [TaskStatus.Failed]: "Could not request reviewers for review",
+          },
+          skip: () => reviewers.length === 0,
+          action: () => git.addReviewers(reviewers),
+        },
       ],
       {
         onStatusChange: {
@@ -146,6 +172,8 @@ export default class Ready extends AuthenticatedCommand {
         },
       },
     )
+
+    console.log()
 
     await tasks.run({ transition })
 

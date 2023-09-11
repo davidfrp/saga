@@ -13,7 +13,7 @@ interface StoreKeys {
   email: string
   jiraHostname: string
   project: string
-  baseBranch: string
+  askForStartingPoint: string
   workingStatus: string
   readyForReviewStatus: string
   branchNameTemplate: string
@@ -43,8 +43,10 @@ const config = new Store<StoreKeys, AuthStoreKeys>(
       description: "The project you are currently working on.",
     },
     {
-      key: "baseBranch",
-      description: "The base branch to use when creating new branches.",
+      key: "askForStartingPoint",
+      description:
+        "Whether to use the same branch as both starting point and base branch.",
+      defaultValue: "true",
     },
     {
       key: "workingStatus",

@@ -225,6 +225,14 @@ export class GitService {
     return openPrExists
   }
 
+  async addReviewers(reviewers: string[]): Promise<void> {
+    await this.exec(`gh pr edit --add-reviewer ${reviewers.join(",")}`)
+  }
+
+  async removeReviewers(reviewers: string[]): Promise<void> {
+    await this.exec(`gh pr edit --remove-reviewer ${reviewers.join(",")}`)
+  }
+
   async createPullRequest(options: CreatePullRequestOptions): Promise<void> {
     const branch = options.head || (await this.getCurrentBranch())
 
@@ -357,5 +365,34 @@ export class GitService {
     )
 
     return sortAndGroup(branches)
+  }
+
+  async getUsername(): Promise<string> {
+    const { stdout: json } = await this.exec("gh api /user")
+    return JSON.parse(json).login
+  }
+
+  async getTeamMembers(): Promise<string[] | null> {
+    const { stdout: json } = await this.exec(
+      "gh pr view --json headRepository,headRepositoryOwner",
+    )
+
+    if (!json) throw new Error("Unable to get details of repo and/or owner")
+
+    const { headRepository, headRepositoryOwner } = JSON.parse(json)
+
+    const { stdout: teamMembersJson } = await this.exec(
+      `gh api /orgs/${headRepositoryOwner.login}/teams/${headRepository.name}/members`,
+    )
+
+    const teamMembers = JSON.parse(teamMembersJson)
+
+    if (teamMembers?.message === "Not Found") return null
+
+    const username = await this.getUsername()
+
+    return (teamMembers as { login: string }[])
+      .filter((member) => member.login !== username)
+      .map((member) => member.login)
   }
 }

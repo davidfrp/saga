@@ -1,6 +1,6 @@
 {
   "name": "@davidfrp/saga",
-  "version": "1.5.2",
+  "version": "2.0.0",
   "description": "Eases the flow of work for developers.",
   "author": "David Petersen @davidfrp",
   "bin": "./bin/run.js",
@@ -22,7 +22,7 @@
     "chalk": "^5.2.0",
     "dot": "beta",
     "fuzzysort": "^2.0.4",
-    "inquirer": "^9.2.6",
+    "inquirer": "^9.2.11",
     "inquirer-autocomplete-prompt": "^3.0.0",
     "jira-client": "^8.2.2",
     "keytar": "^7.9.0",
