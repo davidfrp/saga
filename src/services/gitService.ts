@@ -343,6 +343,10 @@ export class GitService {
     await this.exec("git pull")
   }
 
+  async reset(branch: string, remote = "origin"): Promise<void> {
+    await this.exec(`git reset --hard ${remote}/${branch}`)
+  }
+
   async isBranchNameValid(branch: string): Promise<boolean> {
     const { code } = await this.exec(`git check-ref-format --branch ${branch}`)
     return code === 0

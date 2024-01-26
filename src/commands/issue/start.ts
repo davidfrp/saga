@@ -307,8 +307,8 @@ export default class Start extends AuthenticatedCommand {
     )
     const prTitleTemplate = this.store.get("prTitleTemplate") || ""
     const defaultPrTitle = doT.template(prTitleTemplate, {
-      argName: ["issue"],
-    })({ issue })
+      argName: ["issue", "branch"],
+    })({ issue, branch })
 
     const pullRequestTitle = await askPrTitle(
       defaultPrTitle,
@@ -329,6 +329,20 @@ export default class Start extends AuthenticatedCommand {
     const commitMessage =
       this.store.get("emptyCommitMessageTemplate") || pullRequestTitle
 
+    async function validateIsCurrentBranch(branch: string) {
+      const currentBranch = await git.getCurrentBranch()
+
+      if (currentBranch !== branch) {
+        throw new Error(
+          format(
+            "Expected current branch to be %s but got %s",
+            branch,
+            currentBranch,
+          ),
+        )
+      }
+    }
+
     const tasks: Task<TaskerContext>[] = [
       {
         titles: {
@@ -346,24 +360,14 @@ export default class Start extends AuthenticatedCommand {
           ),
         },
         action: async () => {
-          await git.fetch({ prune: true })
-          await git.checkoutBranch(startingPoint)
-          await git.pull()
-          await git.createBranch(branch)
+          await git.createBranch(branch, startingPoint)
           await git.checkoutBranch(branch)
+
+          validateIsCurrentBranch(branch)
+
+          await git.fetch({ prune: true })
+          await git.reset(startingPoint, "origin")
           await git.setUpstream(branch, "origin")
-
-          const currentBranch = await git.getCurrentBranch()
-
-          if (currentBranch !== branch) {
-            throw new Error(
-              format(
-                "Expected current branch to be %s but got %s",
-                branch,
-                currentBranch,
-              ),
-            )
-          }
         },
       },
     ]
@@ -439,7 +443,10 @@ export default class Start extends AuthenticatedCommand {
           ),
         },
         action: async () => {
-          const commits = await git.getCommitsBetween(prBaseBranch, branch)
+          const commits = await git.getCommitsBetween(
+            `origin/${prBaseBranch}`,
+            branch,
+          )
 
           if (commits.length === 0) {
             await git.commit(commitMessage, {
