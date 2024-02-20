@@ -198,6 +198,13 @@ export class GitService {
     return code === 0
   }
 
+  async searchRemoteBranch(searchTerm: string): Promise<string[]> {
+    const { stdout } = await this.exec(
+      `git branch --remotes --list '*${searchTerm}*'`,
+    )
+    return stdout.split("\n").filter(Boolean)
+  }
+
   async getCommitsBetween(from: string, to: string): Promise<string[]> {
     const { stdout: commits } = await this.exec(
       `git log --pretty=format:"%s" ${from}..${to}`,
