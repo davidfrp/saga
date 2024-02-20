@@ -2,12 +2,7 @@ import { Args, Flags } from "@oclif/core"
 import chalk from "chalk"
 import doT from "dot"
 import { format } from "util"
-import {
-  Issue,
-  Project,
-  StatusCategory,
-  Transition,
-} from "../../@types/atlassian.js"
+import { Issue, StatusCategory, Transition } from "../../@types/atlassian.js"
 import { AuthenticatedCommand } from "../../authenticatedCommand.js"
 import {
   askAssignYou,
@@ -76,7 +71,7 @@ export default class Start extends AuthenticatedCommand {
           )}`,
         )
       } else {
-        const project = await askProject(projects as Project[])
+        const project = await askProject(projects)
         projectKey = project.key
       }
 
@@ -118,10 +113,7 @@ export default class Start extends AuthenticatedCommand {
 
     if (!issue) {
       const jql = `
-        project = "${projectKey}" AND (
-          assignee IN (currentUser()) OR
-          assignee IS EMPTY
-        ) AND statusCategory IN (
+        project = "${projectKey}" AND statusCategory IN (
           ${StatusCategory.ToDo},
           ${StatusCategory.InProgress}
         ) ORDER BY lastViewed DESC
