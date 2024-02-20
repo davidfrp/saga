@@ -25,11 +25,23 @@ export default class JiraService {
     })
   }
 
+  private colorCache: { [key: string]: string } = {}
+
   private async colorFromSvg(svgUrl: string) {
+    if (this.colorCache[svgUrl]) {
+      return this.colorCache[svgUrl]
+    }
+
     const response = await fetch(svgUrl)
     const svg = await response.text()
     const color = svg.match(/fill="#([0-9a-f]{6})"/i)?.[1]
-    return color ? `#${color}` : undefined
+    const colorCode = color ? `#${color}` : undefined
+
+    if (colorCode) {
+      this.colorCache[svgUrl] = colorCode
+    }
+
+    return colorCode
   }
 
   private async fillIssue(issue: Issue): Promise<Issue> {
