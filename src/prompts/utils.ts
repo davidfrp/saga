@@ -52,6 +52,7 @@ export type SourceFn<T> = (SourceRow<T> | inquirer.Separator)[]
 
 /**
  * Returns a function that generates a source function based on provided items and options.
+ * @deprecated Use `createSourceFn` instead.
  *
  * @template T - The type of items in the source function.
  * @param items - An array of items to generate the source from.

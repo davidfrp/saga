@@ -7,6 +7,7 @@ import { AuthenticatedCommand } from "../../authenticatedCommand.js"
 import {
   askAssignYou,
   askBranchName,
+  askCheckOutRemoteBranch,
   askChoice,
   askIssue,
   askPrBaseBranch,
@@ -160,10 +161,23 @@ export default class Start extends AuthenticatedCommand {
       issue = await askIssue(issues)
     }
 
+    const remoteBranchMatches = await git.searchRemoteBranch(issue.key)
+
+    if (remoteBranchMatches.length > 0) {
+      const shouldCheckOutRemoteBranch = await askCheckOutRemoteBranch()
+      const remoteBranch = remoteBranchMatches[0].trim()
+
+      if (shouldCheckOutRemoteBranch) {
+        await git.checkoutBranch(remoteBranch)
+        this.exit(0)
+      }
+    }
+
     let shouldAssignToUser = false
     if (issue.fields.assignee?.emailAddress !== email) {
       this.action.stop()
-      shouldAssignToUser = await askAssignYou()
+      const isUnassigned = !issue.fields.assignee
+      shouldAssignToUser = await askAssignYou(isUnassigned)
     }
 
     const transitions = await jira.listTransitions(issue.key)

@@ -33,6 +33,7 @@ export default async function (issues: Issue[]): Promise<Issue> {
           },
           {
             value: (issue) => issue.fields.status.name,
+            maxWidth: 10,
           },
           {
             value: (issue) =>

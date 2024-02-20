@@ -316,8 +316,14 @@ export class GitService {
     await this.exec(`git fetch ${prune ? "--prune" : ""}`)
   }
 
-  async checkoutBranch(branch: string): Promise<void> {
-    await this.exec(`git checkout ${branch}`)
+  async checkoutBranch(branch: string, remote?: string): Promise<void> {
+    const { code } = await this.exec(
+      `git checkout -q --track ${remote ? `${remote}/` : ""}${branch}`,
+    )
+
+    if (code !== 0) {
+      throw new Error(`Unable to checkout branch ${branch}`)
+    }
   }
 
   async viewPullRequestOnWeb(): Promise<void> {
