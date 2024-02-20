@@ -25,6 +25,7 @@ export type Issue = {
     summary: string
     assignee?: User
     lastViewed?: Date
+    parent?: Issue
     issuetype: {
       name: string
       iconUrl: string
@@ -35,6 +36,11 @@ export type Issue = {
       statusCategory: {
         key: StatusCategory
       }
+    }
+    priority: {
+      name: string
+      iconUrl: string
+      color?: string // custom field
     }
   }
 }

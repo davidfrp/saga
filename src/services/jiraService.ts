@@ -42,6 +42,10 @@ export default class JiraService {
       issue.fields.lastViewed = new Date(issue.fields.lastViewed)
     }
 
+    if (issue.fields.parent) {
+      issue.fields.parent = await this.fillIssue(issue.fields.parent)
+    }
+
     return issue
   }
 
