@@ -1,159 +1,149 @@
-import { Command } from "@oclif/core"
-import { CommandError } from "@oclif/core/lib/interfaces/errors.js"
+import { Command, Config } from "@oclif/core"
 import { ExitError } from "@oclif/core/lib/errors/index.js"
+import { CommandError } from "@oclif/core/lib/interfaces/index.js"
 import chalk from "chalk"
-import shelljs, { ExecOutputReturnValue } from "shelljs"
-import ora, { Ora } from "ora"
-import { Store } from "./store/store.js"
+import { exec } from "node:child_process"
+import { resolve } from "node:path"
 import { format } from "node:util"
-import { GitServiceError } from "./services/gitService.js"
-import { Logger } from "./logger.js"
+import ora, { Ora } from "ora"
+import {
+  ActionSequenceState,
+  ActionSequencer,
+  ActionSequencerOptions,
+} from "./actions/index.js"
+import { Configuration, Logger, createSchema } from "./configuration/index.js"
 
-interface StoreKeys {
-  email: string
-  jiraHostname: string
-  project: string
-  askForStartingPoint: string
-  workingStatus: string
-  readyForReviewStatus: string
-  branchNameTemplate: string
-  branchNamePattern: string
-  prTitleTemplate: string
-  prTitlePattern: string
-  prBodyTemplate: string
-  emptyCommitMessageTemplate: string
-}
-
-interface AuthStoreKeys {
-  atlassianApiToken: string
-}
-
-const config = new Store<StoreKeys, AuthStoreKeys>(
-  [
-    {
-      key: "email",
-      description: "The email address associated with your Atlassian account.",
+const SAGA_CONFIG_SCHEMA = createSchema({
+  jiraHostname: {
+    description: "The hostname of your Jira instance.",
+    value: "",
+  },
+  email: {
+    description: "The email address associated with your Atlassian account.",
+    value: "",
+  },
+  project: {
+    description: "The default project to use when creating new issues.",
+    value: "",
+  },
+  askForStartingPoint: {
+    description:
+      "Whether to use the same branch as both starting point and base branch.",
+    value: true,
+  },
+  workingStatus: {
+    description: "Status to transition to when starting work on an issue.",
+    value: "",
+  },
+  readyForReviewStatus: {
+    description:
+      "Status to transition to when marking an issue as ready for review.",
+    value: "",
+  },
+  branchNameTemplate: {
+    description:
+      "Template used to generate default branch names. Uses the doT template engine.",
+    value:
+      "feature/{{=issue.key}}-{{=issue.fields.summary.toLowerCase().replace(/[^\\s\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]/gi, '').trim().replace(/\\s+/g, '-')}}",
+  },
+  branchNamePattern: {
+    description: "Pattern used to validate branch names.",
+    value: "/.*/",
+  },
+  prTitleTemplate: {
+    description:
+      "Template used to generate default pull request titles. Uses the doT template engine.",
+    value:
+      "feat: {{=issue.fields.summary.toLowerCase().replace(/[^'\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]+/gi, ' ').trim()}}",
+  },
+  prTitlePattern: {
+    description: "Pattern used to validate pull request titles.",
+    value: "",
+  },
+  prBodyTemplate: {
+    description:
+      "Template used to generate default pull request bodies. Uses the doT template engine.",
+    value: "[{{=issue.key}}]({{=issue.url}})",
+  },
+  emptyCommitMessageTemplate: {
+    description:
+      "Template used to generate default empty commit messages. Uses the doT template engine.",
+    value: "chore: creating pull request",
+  },
+  lifeCycleCommands: {
+    description: "Commands to run at different stages of the saga life cycle.",
+    value: {
+      "issue:started": "echo 'issue:started'",
+      "issue:completed": "echo 'issue:completed'",
     },
-    {
-      key: "jiraHostname",
-      description: "The hostname of your Jira instance.",
-    },
-    {
-      key: "project",
-      description: "The project you are currently working on.",
-    },
-    {
-      key: "askForStartingPoint",
-      description:
-        "Whether to use the same branch as both starting point and base branch.",
-      defaultValue: "true",
-    },
-    {
-      key: "workingStatus",
-      description: "Status to transition to when starting work on an issue.",
-    },
-    {
-      key: "readyForReviewStatus",
-      description:
-        "Status to transition to when marking an issue as ready for review.",
-    },
-    {
-      key: "branchNameTemplate",
-      description:
-        "Template used to generate default branch names. Uses the doT template engine.",
-      defaultValue:
-        "feature/{{=issue.key}}-{{=issue.fields.summary.toLowerCase().replace(/[^\\s\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]/gi, '').trim().replace(/\\s+/g, '-')}}",
-    },
-    {
-      key: "branchNamePattern",
-      description: "Pattern used to validate branch names.",
-    },
-    {
-      key: "prTitleTemplate",
-      description:
-        "Template used to generate default pull request titles. Uses the doT template engine.",
-      defaultValue:
-        "feat: {{=issue.fields.summary.toLowerCase().replace(/[^'\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]+/gi, ' ').trim()}}",
-    },
-    {
-      key: "prTitlePattern",
-      description: "Pattern used to validate pull request titles.",
-    },
-    {
-      key: "prBodyTemplate",
-      description:
-        "Template used to generate default pull request bodies. Uses the doT template engine.",
-      defaultValue: "[{{=issue.key}}]({{=issue.url}})",
-    },
-    {
-      key: "emptyCommitMessageTemplate",
-      description:
-        "Template used to generate default empty commit messages. Uses the doT template engine.",
-      defaultValue: "chore: creating pull request",
-    },
-  ],
-  [
-    {
-      key: "atlassianApiToken",
-      description: "The Atlassian API-token used to act on your behalf.",
-    },
-  ],
-)
+  },
+  atlassianApiToken: {
+    isSecret: true,
+    description: "The Atlassian API-token used to act on your behalf.",
+    value: "",
+  },
+})
 
 export abstract class BaseCommand extends Command {
-  private spinner: Ora = ora({ spinner: "dots2" })
+  protected readonly logger: Logger
 
-  get store(): Store<StoreKeys, AuthStoreKeys> {
-    return config
+  readonly #spinner: Ora = ora({ spinner: "dots" })
+
+  public declare config: Config & {
+    saga: Configuration<typeof SAGA_CONFIG_SCHEMA>
   }
 
-  get logger() {
-    return Logger
+  public constructor(argv: string[], config: Config) {
+    super(argv, config)
+
+    const sagaCrashLogPath = resolve(config.configDir, "crash.log")
+    const sagaConfigPath = resolve(config.configDir, "config.json")
+
+    this.logger = new Logger(sagaCrashLogPath)
+
+    const sagaConfig = new Configuration(sagaConfigPath, SAGA_CONFIG_SCHEMA)
+
+    this.config.saga = sagaConfig
   }
 
-  get action() {
-    return {
-      wait: (durationInMs: number) => {
-        return new Promise((resolve) => setTimeout(resolve, durationInMs))
-      },
-      start: (message?: string) => {
-        this.spinner.stop()
-        this.spinner.start(message)
-      },
-      stop: () => this.spinner.stop(),
-      succeed: (message?: string) =>
-        this.spinner.stopAndPersist({
-          symbol: chalk.green("✓"),
-          text: message,
-        }),
-      fail: (message?: string) => {
-        this.spinner.stopAndPersist({
-          symbol: chalk.red("✗"),
-          text: message,
-        })
-      },
-      warn: (message?: string) => {
-        this.spinner.stopAndPersist({
-          symbol: chalk.yellow("!"),
-          text: message,
-        })
-      },
-    }
+  protected override async catch(error: CommandError) {
+    this.spinner.stop()
+
+    if (error instanceof ExitError) return
+
+    this.logger.log(error.stack ?? error.message)
+    await this.logger.save()
+
+    this.log(
+      `\n${chalk.yellow("!")} ${format(
+        "Something went wrong. A crash log has been generated.\n  %s",
+        this.logger.path,
+      )}\n`,
+    )
   }
 
-  exec(command: string): Promise<ExecOutputReturnValue> {
-    return new Promise((resolve) => {
-      Logger.log(command)
-      shelljs.exec(command, { silent: true }, (code, stdout, stderr) => {
-        Logger.log(stdout)
-        Logger.log(stderr)
-        resolve({
-          code,
-          stdout,
-          stderr,
-        })
-      })
-    })
+  public override log(message?: string, ...args: any[]) {
+    this.spinner.stop()
+    return super.log(message, ...args)
+  }
+
+  public override warn(input: string | Error) {
+    this.spinner.stop()
+    return super.warn(input)
+  }
+
+  public override error(input: string | Error, options?: { code?: string }) {
+    this.spinner.stop()
+    return super.error(input, options)
+  }
+
+  public override exit(code?: number | undefined): void {
+    this.spinner.stop()
+    return super.exit(code)
+  }
+
+  protected async wait(durationInMs: number) {
+    await new Promise((resolve) => setTimeout(resolve, durationInMs))
   }
 
   /**
@@ -161,7 +151,7 @@ export abstract class BaseCommand extends Command {
    * @param url The URL to open.
    * @returns void
    */
-  open(url: URL | string): void {
+  protected open(url: URL | string) {
     let command: string
 
     switch (process.platform) {
@@ -176,27 +166,72 @@ export abstract class BaseCommand extends Command {
         break
     }
 
-    this.exec(command)
+    exec(command)
   }
 
-  protected async catch(error: CommandError) {
-    this.action.stop()
-
-    if (error instanceof GitServiceError) {
-      console.log(`\n${chalk.red("✗")} ${error.message}\n`)
-      return
+  protected get spinner() {
+    return {
+      start: (message?: string) => {
+        this.#spinner.stop()
+        this.#spinner.start(message)
+      },
+      stop: () => {
+        this.#spinner.stop()
+      },
+      stopAndPersist: (options: { symbol: string; message?: string }) => {
+        this.#spinner.stopAndPersist({
+          symbol: options.symbol,
+          text: options.message,
+        })
+      },
+      succeed: (message?: string) => {
+        this.#spinner.stopAndPersist({
+          symbol: chalk.green("✓"),
+          text: message,
+        })
+      },
+      fail: (message?: string) => {
+        this.#spinner.stopAndPersist({
+          symbol: chalk.red("✗"),
+          text: message,
+        })
+      },
+      warn: (message?: string) => {
+        this.#spinner.stopAndPersist({
+          symbol: chalk.yellow("!"),
+          text: message,
+        })
+      },
     }
+  }
 
-    if (error instanceof ExitError) return
-
-    Logger.log(error.stack ?? error.message)
-    Logger.persist()
-
-    console.log(
-      `\n${chalk.yellow("!")} ${format(
-        "Something went wrong. A crash log has been generated.\n  %s",
-        Logger.file,
-      )}\n`,
-    )
+  protected initActionSequencer<TContext>(options?: ActionSequencerOptions) {
+    return new ActionSequencer<TContext>({
+      renderer: {
+        render: (state, title) => {
+          switch (state) {
+            case ActionSequenceState.Running:
+              this.spinner.start(title)
+              break
+            case ActionSequenceState.Skipped:
+              this.spinner.stopAndPersist({
+                symbol: chalk.yellow("↓"),
+                message: title,
+              })
+              break
+            case ActionSequenceState.Completed:
+              this.spinner.succeed(title)
+              break
+            case ActionSequenceState.Failed:
+              this.spinner.fail(title)
+              break
+            default:
+              this.spinner.stop()
+              break
+          }
+        },
+      },
+      ...options,
+    })
   }
 }

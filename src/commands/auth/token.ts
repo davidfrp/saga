@@ -1,17 +1,21 @@
 import chalk from "chalk"
-import { AuthenticatedCommand } from "../../authenticatedCommand.js"
+import { AuthCommand } from "../../AuthCommand.js"
 
-export default class Status extends AuthenticatedCommand {
-  async run(): Promise<void> {
-    const atlassianApiToken = await this.store.secrets.get("atlassianApiToken")
+export default class Status extends AuthCommand {
+  async run() {
+    const atlassianApiToken = await this.config.saga.getSecret(
+      "atlassianApiToken",
+    )
 
     if (!atlassianApiToken) {
-      console.log(
-        `${chalk.red("✗")} Your Atlassian API-token was not found in keychain.`,
+      this.log(
+        chalk.red("✗"),
+        "Your Atlassian API-token was not found in keychain.",
       )
-      this.exit(1)
+
+      return this.exit(1)
     }
 
-    console.log(atlassianApiToken)
+    this.log(atlassianApiToken)
   }
 }

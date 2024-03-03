@@ -1,21 +1,26 @@
 import chalk from "chalk"
-import { BaseCommand } from "../../baseCommand.js"
+import { BaseCommand } from "../../BaseCommand.js"
 
 export default class Logout extends BaseCommand {
-  static flags = {}
+  async run() {
+    this.config.saga.set("project", "")
+    this.config.saga.set("email", "")
+    this.config.saga.set("jiraHostname", "")
 
-  static args = {}
-
-  async run(): Promise<void> {
-    this.store.remove("project")
-    this.store.remove("email")
-    this.store.remove("jiraHostname")
-    await this.store.secrets.remove("atlassianApiToken")
-
-    console.log(
-      `${chalk.green(
-        "✓",
-      )} Your login credentials have been removed from config and keychain.`,
+    const successfullyRemovedToken = await this.config.saga.removeSecret(
+      "atlassianApiToken",
     )
+
+    if (successfullyRemovedToken) {
+      this.log(
+        chalk.green("✓"),
+        "Your login credentials have been removed from config and keychain.",
+      )
+    } else {
+      this.log(
+        chalk.red("✗"),
+        "Your login credentials could not be removed from keychain.",
+      )
+    }
   }
 }

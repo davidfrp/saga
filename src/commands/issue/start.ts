@@ -1,497 +1,122 @@
-import { Args, Flags } from "@oclif/core"
+import { ExitError } from "@oclif/core/lib/errors/index.js"
 import chalk from "chalk"
 import doT from "dot"
-import { format } from "util"
-import { Issue, StatusCategory, Transition } from "../../@types/atlassian.js"
-import { AuthenticatedCommand } from "../../authenticatedCommand.js"
+import { format } from "node:util"
+import { AuthCommand } from "../../AuthCommand.js"
+import { GitService } from "../../services/git/index.js"
 import {
-  askAssignYou,
-  askBranchName,
-  askCheckOutRemoteBranch,
+  Issue,
+  JiraService,
+  StatusCategory,
+  Transition,
+} from "../../services/jira/index.js"
+import askIssue from "../../ux/prompts/askIssue.js"
+import chooseProject from "../../ux/prompts/chooseProject.js"
+import {
+  askAssignToMe,
+  askBaseBranch,
+  askBranch,
+  askCheckOutLinkedBranch,
   askChoice,
-  askIssue,
-  askPrBaseBranch,
   askPrTitle,
-  askProject,
   askStartingPoint,
   askTransition,
-} from "../../prompts/index.js"
-import { GitService } from "../../services/gitService.js"
-import JiraService from "../../services/jiraService.js"
-import { Task, TaskStatus, Tasker } from "../../tasker.js"
+} from "../../ux/prompts/index.js"
 
-interface TaskerContext {
+interface ActionSequencerContext {
+  git: GitService
+  jira: JiraService
   issue: Issue
+  branch: string
+  baseBranch: string
+  startingPoint: string
   transition: Transition
+  shouldAssignToMe: boolean
+  pullRequestTitle: string
+  pullRequestDescription: string
+  emptyCommitMessage: string
 }
 
-export default class Start extends AuthenticatedCommand {
+export default class Start extends AuthCommand {
   static summary = "Start working on an issue"
 
-  static args = {
-    id: Args.string({ description: "Id or key of the issue to work on" }),
-  }
+  static args = {}
 
-  static flags = {
-    "list-projects": Flags.boolean({
-      description: "List all projects you have access to",
-    }),
-  }
+  static flags = {}
 
-  async run(): Promise<void> {
-    this.action.start()
+  async run() {
+    const jira = await this.initJiraService()
+    const git = await this.initGitService()
 
-    const { args, flags } = await this.parse(Start)
+    const projectKey = await this.resolveProjectKey(jira)
 
-    const git = await new GitService({
-      executor: this.exec,
-    }).checkRequirements()
+    const issue = await this.resolveIssue(jira, projectKey)
 
-    const host = this.store.get("jiraHostname")
-    const email = this.store.get("email")
-    const token = await this.store.secrets.get("atlassianApiToken")
+    const linkedBranch = await jira.getLinkedBranch(issue.id)
 
-    const jira = new JiraService({
-      host,
-      email,
-      token,
-    })
-
-    let projectKey = this.store.get("project")
-    if (!projectKey || flags["list-projects"]) {
-      const projects = await jira.listProjects()
-
-      this.action.stop()
-
-      if (projects.length === 1) {
-        projectKey = projects[0].key
-        console.log(
-          `${chalk.yellow("!")} ${format(
-            "Using %s as project since there are no other projects to choose from.",
-            chalk.cyan(projectKey),
-          )}`,
-        )
-      } else {
-        const project = await askProject(projects)
-        projectKey = project.key
-      }
-
-      this.store.set("project", projectKey)
-
-      if (!flags["list-projects"] && projects.length > 1) {
-        console.log(
-          `${format(
-            "You can view and select a different project at any time by adding the %s flag",
-            chalk.bold("--list-projects"),
-          )}`,
-        )
-      }
+    if (linkedBranch) {
+      await this.handleIssueLinkedToBranch(git, linkedBranch)
     }
 
-    let issue: Issue | null | undefined
-    if (args.id) {
-      if (!args.id.startsWith(projectKey)) {
-        args.id = `${projectKey}-${args.id}`
-      }
-
-      try {
-        issue = await jira.findIssue(args.id)
-      } catch (error) {
-        if (error instanceof Error) {
-          this.logger.log(error.stack ?? error.message)
-        }
-      }
-
-      if (!issue) {
-        console.log(
-          `${chalk.yellow("!")} ${format(
-            "Unable to find an issue with id %s",
-            chalk.cyan(args.id),
-          )}`,
-        )
-      }
-    }
-
-    if (!issue) {
-      const jql = `
-        project = "${projectKey}" AND statusCategory IN (
-          ${StatusCategory.ToDo},
-          ${StatusCategory.InProgress}
-        ) ORDER BY lastViewed DESC
-      `
-
-      let issues: Issue[] = []
-      try {
-        issues = await jira.findIssuesByJql(jql)
-      } catch (error) {
-        if (error instanceof Error) {
-          this.logger.log(error.stack ?? error.message)
-        }
-      }
-
-      issues.sort((a, b) => {
-        const aCategory = a.fields.status.statusCategory.key
-        const bCategory = b.fields.status.statusCategory.key
-
-        if (aCategory === bCategory) {
-          if (a.fields.assignee && !b.fields.assignee) {
-            return -1
-          }
-
-          if (!a.fields.assignee && b.fields.assignee) {
-            return 1
-          }
-
-          return 0
-        }
-
-        if (aCategory === StatusCategory.ToDo) {
-          return -1
-        }
-
-        if (bCategory === StatusCategory.ToDo) {
-          return 1
-        }
-
-        return 0
-      })
-
-      this.action.stop()
-
-      issue = await askIssue(issues)
-    }
-
-    const remoteBranchMatches = await git.searchRemoteBranch(issue.key)
-
-    if (remoteBranchMatches.length > 0) {
-      const shouldCheckOutRemoteBranch = await askCheckOutRemoteBranch()
-      const remoteBranch = remoteBranchMatches[0].trim()
-
-      if (shouldCheckOutRemoteBranch) {
-        await git.checkoutBranch(remoteBranch)
-        this.exit(0)
-      }
-    }
-
-    let shouldAssignToUser = false
-    if (issue.fields.assignee?.emailAddress !== email) {
-      this.action.stop()
-      const isUnassigned = !issue.fields.assignee
-      shouldAssignToUser = await askAssignYou(isUnassigned)
-    }
-
-    const transitions = await jira.listTransitions(issue.key)
-
-    const filteredTransitions = transitions.filter(
-      (transition) =>
-        transition.to.statusCategory.key === StatusCategory.InProgress,
+    const shouldAssignToMe = await this.resolveShouldAssignToMe(
+      issue,
+      jira.email,
     )
 
-    let transition: Transition | undefined
-    const workingStatus = this.store.get("workingStatus")
-    if (workingStatus) {
-      transition = filteredTransitions.find(
-        (transition) => transition.name === workingStatus,
-      )
-    }
+    const transition = await this.resolveInProgressTransition(jira, issue)
 
-    if (!transition) {
-      this.action.stop()
-      transition = await askTransition(filteredTransitions)
-      this.store.set("workingStatus", transition.name)
-    }
+    const branch = await this.resolveBranch(git, issue)
 
-    const branchNamePattern = new RegExp(
-      this.store.get("branchNamePattern") || "(?:)",
-    )
-    const branchNameTemplate = this.store.get("branchNameTemplate") || ""
-    const defaultBranchName = doT.template(branchNameTemplate, {
-      argName: ["issue"],
-    })({ issue })
+    const branches = await git.listPopularBaseBranches()
 
-    this.action.stop()
+    const baseBranch = await this.resolveBaseBranch(git, branches)
 
-    const branch = await askBranchName(defaultBranchName, (value: string) => {
-      if (!branchNamePattern?.test(value)) {
-        return `Your branch name must match the pattern ${chalk.red(
-          branchNamePattern,
-        )}`
-      }
-
-      return true
-    })
-
-    await git.fetch({ prune: true })
-
-    const [popularBaseBranches, remoteBranches] = await Promise.all([
-      git.getPopularBaseBranches(),
-      git.getRemoteBranches(),
-    ])
-
-    const baseBranches = [
-      ...new Set([...popularBaseBranches, ...remoteBranches]),
-    ].filter((branch) => remoteBranches.includes(branch))
-
-    let prBaseBranch: string
-
-    if (baseBranches.length > 1) {
-      prBaseBranch = await askPrBaseBranch(baseBranches)
-    } else {
-      if (baseBranches.length === 1) {
-        prBaseBranch = baseBranches[0]
-      } else {
-        prBaseBranch = await git.getCurrentBranch()
-      }
-
-      console.log(
-        `${chalk.yellow("!")} ${format(
-          "Using %s as base branch since there are no other branches to choose from.",
-          chalk.cyan(prBaseBranch),
-        )}`,
-      )
-    }
-
-    console.log(
-      `${chalk.yellow("!")} ${format(
+    this.log(
+      chalk.yellow("!"),
+      format(
         "This will create a pull request for %s into %s",
         chalk.cyan(branch),
-        chalk.cyan(prBaseBranch),
-      )}`,
+        chalk.cyan(baseBranch),
+      ),
     )
 
-    await this.action.wait(200)
+    const startingPoint = await this.resolveStartingPoint(branches, baseBranch)
 
-    const askForStartingPoint = this.store.get("askForStartingPoint") === "true"
-
-    let startingPoint = prBaseBranch
-    if (askForStartingPoint) {
-      startingPoint = await askStartingPoint(
-        baseBranches.sort((a, b) => {
-          if (a === prBaseBranch) {
-            return -1
-          }
-
-          if (b === prBaseBranch) {
-            return 1
-          }
-
-          return 0
-        }),
-      )
-    } else {
-      console.log(
-        `${chalk.yellow("!")} ${format(
-          "Using the %s base branch as starting point.",
-          chalk.cyan(prBaseBranch),
-        )}`,
-      )
-    }
-
-    console.log(
-      `${chalk.yellow("!")} ${format(
+    this.log(
+      chalk.yellow("!"),
+      format(
         "%s will be based on %s",
         chalk.cyan(branch),
         chalk.cyan(startingPoint),
-      )}`,
+      ),
     )
 
-    await this.action.wait(200)
+    await this.handlePullRequestAlreadyExists(git, branch, baseBranch)
 
-    if (await git.doesOpenPrExist(branch, prBaseBranch)) {
-      console.error(
-        `${chalk.red("✗")} ${format(
-          "An open pull request already exists for %s into %s",
-          chalk.cyan(branch),
-          chalk.cyan(prBaseBranch),
-        )}`,
-      )
-      this.exit(1)
-    }
+    const pullRequestTitle = await this.resolvePullRequestTitle(issue, branch)
 
-    const prTitlePattern = new RegExp(
-      this.store.get("prTitlePattern") || "(?:)",
-    )
-    const prTitleTemplate = this.store.get("prTitleTemplate") || ""
-    const defaultPrTitle = doT.template(prTitleTemplate, {
-      argName: ["issue", "branch"],
-    })({ issue, branch })
+    const pullRequestDescription = this.getPullRequestDescription(issue, branch)
 
-    const pullRequestTitle = await askPrTitle(
-      defaultPrTitle,
-      (value: string) =>
-        (prTitlePattern?.test(value) ?? true) ||
-        `Your pull request title must match the pattern ${chalk.red(
-          prTitlePattern,
-        )}`,
-    )
+    const emptyCommitMessage = this.getEmptyCommitMessage(issue, branch)
 
-    const prBodyTemplate = this.store.get("prBodyTemplate") || ""
-    const defaultPrBody = doT.template(prBodyTemplate, {
-      argName: ["issue"],
-    })({ issue })
-
-    const prBody = defaultPrBody
-
-    const commitMessage =
-      this.store.get("emptyCommitMessageTemplate") || pullRequestTitle
-
-    async function validateIsCurrentBranch(branch: string) {
-      const currentBranch = await git.getCurrentBranch()
-
-      if (currentBranch !== branch) {
-        throw new Error(
-          format(
-            "Expected current branch to be %s but got %s",
-            branch,
-            currentBranch,
-          ),
-        )
-      }
-    }
-
-    const tasks: Task<TaskerContext>[] = [
-      {
-        titles: {
-          [TaskStatus.Running]: format(
-            "Switching branch to %s",
-            chalk.cyan(branch),
-          ),
-          [TaskStatus.Done]: format(
-            "Switched branch to %s",
-            chalk.cyan(branch),
-          ),
-          [TaskStatus.Failed]: format(
-            "Could not switch branch to %s",
-            chalk.cyan(branch),
-          ),
-        },
-        action: async () => {
-          await git.createBranch(branch, startingPoint)
-          await git.checkoutBranch(branch)
-
-          validateIsCurrentBranch(branch)
-
-          await git.fetch({ prune: true })
-          await git.reset(startingPoint, "origin")
-          await git.setUpstream(branch, "origin")
-        },
-      },
-    ]
-
-    if (shouldAssignToUser) {
-      tasks.push({
-        titles: {
-          [TaskStatus.Running]: format(
-            "Assigning %s to %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(email),
-          ),
-          [TaskStatus.Done]: format(
-            "Assigned %s to %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(email),
-          ),
-          [TaskStatus.Failed]: format(
-            "Could not assign %s to %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(email),
-          ),
-        },
-        action: async ({ issue }) => {
-          const currentUser = await jira.getCurrentUser()
-          await jira.assignIssue(issue.key, currentUser.accountId)
-        },
-      })
-    }
-
-    tasks.push(
-      {
-        titles: {
-          [TaskStatus.Running]: format(
-            "Transitioning %s to %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(transition.name),
-          ),
-          [TaskStatus.Skipped]: format(
-            "Skipped transition. %s is already in %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(transition.name),
-          ),
-          [TaskStatus.Done]: format(
-            "Transitioned %s from %s to %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(issue.fields.status.name),
-            chalk.cyan(transition.name),
-          ),
-          [TaskStatus.Failed]: format(
-            "Could not transition %s to %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(transition.name),
-          ),
-        },
-        skip: ({ issue, transition }) =>
-          issue.fields.status.name === transition.name,
-        action: ({ issue, transition }) =>
-          jira.transitionIssue(issue.key, transition.id),
-      },
-      {
-        titles: {
-          [TaskStatus.Running]: format(
-            "Creating pull request for %s into %s",
-            chalk.cyan(branch),
-            chalk.cyan(prBaseBranch),
-          ),
-          [TaskStatus.Done]: "Created pull request",
-          [TaskStatus.Failed]: format(
-            "Could not create pull request for %s into %s",
-            chalk.cyan(branch),
-            chalk.cyan(prBaseBranch),
-          ),
-        },
-        action: async () => {
-          const commits = await git.getCommitsBetween(
-            `origin/${prBaseBranch}`,
-            branch,
-          )
-
-          if (commits.length === 0) {
-            await git.commit(commitMessage, {
-              allowEmpty: true,
-              noVerify: true,
-            })
-            await git.push()
-          }
-
-          await git.createPullRequest({
-            head: branch,
-            base: prBaseBranch,
-            body: prBody,
-            title: pullRequestTitle,
-            isDraft: true,
-          })
-        },
-      },
-    )
-
-    const tasker = new Tasker<TaskerContext>(tasks, {
-      onStatusChange: {
-        [TaskStatus.Running]: (task) =>
-          this.action.start(task.titles[TaskStatus.Running]),
-        [TaskStatus.Skipped]: (task) =>
-          this.action.warn(task.titles[TaskStatus.Skipped]),
-        [TaskStatus.Done]: (task) =>
-          this.action.succeed(task.titles[TaskStatus.Done]),
-        [TaskStatus.Failed]: (task) =>
-          this.action.fail(task.titles[TaskStatus.Failed]),
-      },
+    await this.submit({
+      git,
+      jira,
+      issue,
+      branch,
+      baseBranch,
+      startingPoint,
+      transition,
+      shouldAssignToMe,
+      pullRequestTitle,
+      pullRequestDescription,
+      emptyCommitMessage,
     })
 
-    console.log()
+    await this.handleWhatsNext(git, issue)
+  }
 
-    await tasker.run({ issue, transition })
-
-    console.log()
-
+  private async handleWhatsNext(git: GitService, issue: Issue) {
     enum Choices {
       Skip = "Skip",
       OpenPullRequest = "Open pull request in browser",
@@ -508,17 +133,348 @@ export default class Start extends AuthenticatedCommand {
 
     switch (choice) {
       case Choices.OpenPullRequest:
-        this.open(await git.getPullRequestUrl())
+        this.open(await git.fetchPullRequestUrl())
         break
       case Choices.OpenIssue:
         this.open(issue.url)
         break
       case Choices.OpenBoth:
-        this.open(await git.getPullRequestUrl())
+        this.open(await git.fetchPullRequestUrl())
         this.open(issue.url)
         break
     }
 
-    console.log()
+    this.log()
+  }
+
+  private async submit(context: ActionSequencerContext) {
+    const sequencer = this.initActionSequencer<typeof context>()
+
+    sequencer.add(
+      {
+        titles: ({ branch }) => ({
+          running: format("Switching branch to %s", chalk.cyan(branch)),
+          completed: format("Switched branch to %s", chalk.cyan(branch)),
+          failed: format("Could not switch branch to %s", chalk.cyan(branch)),
+        }),
+        action: () => this.wait(600),
+      },
+      {
+        titles: ({ jira: { email }, issue }) => ({
+          running: format(
+            "Assigning %s to %s",
+            chalk.cyan(email),
+            chalk.cyan(issue.key),
+          ),
+          completed: format(
+            "Assigned %s to %s",
+            chalk.cyan(email),
+            chalk.cyan(issue.key),
+          ),
+          failed: format(
+            "Could not assign %s to %s",
+            chalk.cyan(email),
+            chalk.cyan(issue.key),
+          ),
+        }),
+        action: async (context, sequence) => {
+          await this.wait(1200)
+        },
+      },
+      {
+        titles: ({ issue, transition }) => ({
+          running: format(
+            "Transitioning %s to %s",
+            chalk.cyan(issue.key),
+            chalk.cyan(transition.name),
+          ),
+          skipped: format(
+            "Skipped transition. %s is already in %s",
+            chalk.cyan(issue.key),
+            chalk.cyan(transition.name),
+          ),
+          completed: format(
+            "Transitioned %s from %s to %s",
+            chalk.cyan(issue.key),
+            chalk.cyan(issue.fields.status.name),
+            chalk.cyan(transition.name),
+          ),
+          failed: format(
+            "Could not transition %s to %s",
+            chalk.cyan(issue.key),
+            chalk.cyan(transition.name),
+          ),
+        }),
+        action: async (_, sequence) => {
+          await this.wait(900)
+          sequence.skip()
+        },
+      },
+      {
+        titles: ({ branch, baseBranch }) => ({
+          running: format(
+            "Creating pull request for %s into %s",
+            chalk.cyan(branch),
+            chalk.cyan(baseBranch),
+          ),
+          completed: "Created pull request",
+          failed: format(
+            "Could not create pull request for %s into %s",
+            chalk.cyan(branch),
+            chalk.cyan(baseBranch),
+          ),
+        }),
+        action: async () => {
+          await this.wait(2500)
+          // throw new Error("Something went wrong")
+        },
+      },
+    )
+
+    this.log()
+
+    await sequencer.run(context)
+
+    this.log()
+  }
+
+  private getEmptyCommitMessage(issue: Issue, branch: string) {
+    const template = this.config.saga.get("emptyCommitMessageTemplate")
+
+    const templateFn = doT.template(template, { argName: ["issue", "branch"] })
+
+    const emptyCommitMessage = templateFn({ issue, branch })
+
+    return emptyCommitMessage
+  }
+
+  private getPullRequestDescription(issue: Issue, branch: string) {
+    const template = this.config.saga.get("prBodyTemplate")
+
+    const templateFn = doT.template(template, { argName: ["issue", "branch"] })
+
+    const pullRequestDescription = templateFn({ issue, branch })
+
+    return pullRequestDescription
+  }
+
+  private async resolvePullRequestTitle(issue: Issue, branch: string) {
+    const template = this.config.saga.get("prTitleTemplate")
+
+    const templateFn = doT.template(template, { argName: ["issue", "branch"] })
+
+    const defaultPullRequestTitle = templateFn({ issue, branch })
+
+    const pullRequestTitle = await askPrTitle(defaultPullRequestTitle)
+
+    return pullRequestTitle
+  }
+
+  private async handlePullRequestAlreadyExists(
+    git: GitService,
+    branch: string,
+    baseBranch: string,
+  ) {
+    const openPullRequestExists = await git.openPullRequestExists(
+      branch,
+      baseBranch,
+    )
+
+    if (openPullRequestExists) {
+      this.log(
+        chalk.red("✗"),
+        format(
+          "A pull request for %s into %s already exists.",
+          chalk.cyan(branch),
+          chalk.cyan(baseBranch),
+        ),
+      )
+
+      throw new ExitError(1)
+    }
+  }
+
+  private async resolveStartingPoint(
+    branches: string[],
+    defaultBranch: string,
+  ) {
+    const askForStartingPoint = this.config.saga.get("askForStartingPoint")
+
+    if (!askForStartingPoint) return defaultBranch
+
+    let startingPoint: string
+
+    switch (true) {
+      case branches.length > 1:
+        startingPoint = await askStartingPoint(branches)
+        break
+      case branches.length === 1:
+        startingPoint = branches[0]
+        break
+      default:
+        startingPoint = defaultBranch
+        break
+    }
+
+    if (branches.length <= 1) {
+      this.log(
+        chalk.yellow("!"),
+        format(
+          "Using %s as starting point since there are no other branches to choose from.",
+          chalk.cyan(startingPoint),
+        ),
+      )
+    }
+
+    return startingPoint
+  }
+
+  private async resolveBaseBranch(git: GitService, branches: string[]) {
+    let branch: string
+
+    switch (true) {
+      case branches.length > 1:
+        branch = await askBaseBranch(branches)
+        break
+      case branches.length === 1:
+        branch = branches[0]
+        break
+      default:
+        branch = await git.getCurrentBranch()
+        break
+    }
+
+    if (branches.length <= 1) {
+      this.log(
+        chalk.yellow("!"),
+        format(
+          "Using %s as base branch since there are no other branches to choose from.",
+          chalk.cyan(branch),
+        ),
+      )
+    }
+
+    return branch
+  }
+
+  private async resolveBranch(git: GitService, issue: Issue) {
+    const template = this.config.saga.get("branchNameTemplate")
+
+    const templateFn = doT.template(template, { argName: ["issue"] })
+
+    const defaultBranchName = templateFn({ issue })
+
+    const branchName = await askBranch(defaultBranchName) // TODO validate branch name
+
+    return branchName
+  }
+
+  private async resolveInProgressTransition(jira: JiraService, issue: Issue) {
+    const transitions = await jira.listTransitions(issue.key)
+
+    const filteredTransitions = transitions.filter(
+      (transition) =>
+        transition.to.statusCategory.key === StatusCategory.InProgress,
+    )
+
+    const workingStatus = this.config.saga.get("workingStatus")
+
+    if (workingStatus) {
+      const transition = filteredTransitions.find(
+        (transition) => transition.name === workingStatus,
+      )
+
+      if (transition) return transition
+
+      this.log(
+        chalk.yellow("!"),
+        format(
+          "The working status %s is no longer available for this issue.",
+          chalk.cyan(workingStatus),
+        ),
+      )
+    }
+
+    const transition = await askTransition(filteredTransitions)
+
+    this.config.saga.set("workingStatus", transition.name)
+
+    return transition
+  }
+
+  private async resolveShouldAssignToMe(issue: Issue, email: string) {
+    if (issue.fields.assignee?.emailAddress !== email) {
+      return askAssignToMe(!issue.fields.assignee)
+    }
+
+    return false
+  }
+
+  private async handleIssueLinkedToBranch(
+    git: GitService,
+    linkedBranch: string,
+  ) {
+    const shouldCheckOutLinkedBranch = await askCheckOutLinkedBranch()
+
+    if (shouldCheckOutLinkedBranch) {
+      await git.checkout(linkedBranch, ["--track"])
+      throw new ExitError(0)
+    }
+  }
+
+  private async resolveIssue(jira: JiraService, projectKey: string) {
+    const jql = `
+      project = "${projectKey}" AND statusCategory IN (
+        ${StatusCategory.ToDo},
+        ${StatusCategory.InProgress}
+      ) ORDER BY lastViewed DESC
+    `
+
+    this.spinner.start()
+
+    const issues = await jira.findIssuesByJql(jql)
+
+    this.spinner.stop()
+
+    const issue = await askIssue(issues)
+
+    return issue
+  }
+
+  private async resolveProjectKey(jira: JiraService) {
+    let projectKey = this.config.saga.get("project")
+
+    if (!projectKey) {
+      this.spinner.start()
+
+      const projects = await jira.listProjects()
+
+      this.spinner.stop()
+
+      if (projects.length === 0) {
+        this.log("No projects found.")
+        throw new ExitError(1)
+      }
+
+      if (projects.length === 1) {
+        const project = projects[0]
+        projectKey = project.key
+
+        this.log(
+          chalk.yellow("!"),
+          format(
+            "Using %s as project since there are no other projects to choose from.",
+            chalk.cyan(projectKey),
+          ),
+        )
+      } else {
+        const project = await chooseProject(projects)
+        projectKey = project.key
+      }
+    }
+
+    this.config.saga.set("project", projectKey)
+
+    return projectKey
   }
 }

@@ -1,23 +1,22 @@
-import { format } from "util"
 import chalk from "chalk"
+import { format } from "util"
+import { AuthCommand } from "../../AuthCommand.js"
 import {
-  askLoginAgain,
   askEmail,
   askHostname,
+  askLoginAgain,
   askToken,
-} from "../../prompts/index.js"
-import { BaseCommand } from "../../baseCommand.js"
-import JiraService from "../../services/jiraService.js"
+} from "../../ux/prompts/index.js"
 
-export default class Login extends BaseCommand {
-  static flags = {}
+export default class Login extends AuthCommand {
+  protected override async checkAuthentication() {
+    return true
+  }
 
-  static args = {}
-
-  async run(): Promise<void> {
-    let email = this.store.get("email")
-    let host = this.store.get("jiraHostname")
-    let token = await this.store.secrets.get("atlassianApiToken")
+  async run() {
+    let email = this.config.saga.get("email")
+    let host = this.config.saga.get("jiraHostname")
+    let token = await this.config.saga.getSecret("atlassianApiToken")
 
     const hasAllCredentials = email && host && token
 
@@ -26,51 +25,48 @@ export default class Login extends BaseCommand {
     if (hasAllCredentials) {
       shouldReauthenticate = await askLoginAgain()
 
-      if (!shouldReauthenticate) this.exit(0)
+      if (!shouldReauthenticate) {
+        return this.exit(0)
+      }
     }
 
     if (!email || shouldReauthenticate) {
       email = await askEmail()
-      this.store.set("email", email)
+      this.config.saga.set("email", email)
     }
 
     if (!host || shouldReauthenticate) {
       host = await askHostname()
-      this.store.set("jiraHostname", host)
+      this.config.saga.set("jiraHostname", host)
     }
 
     if (!token || shouldReauthenticate) {
       token = await askToken()
-      await this.store.secrets.set("atlassianApiToken", token)
+      await this.config.saga.setSecret("atlassianApiToken", token)
     }
 
-    console.log()
+    this.log()
 
-    const jira = new JiraService({
-      host,
-      email,
-      token,
-    })
+    const jira = await this.initJiraService()
 
     try {
       const currentUser = await jira.getCurrentUser()
 
-      console.log(
-        `${chalk.green("✓")} ${format(
-          "You're logged in as %s (%s)",
+      this.log(
+        chalk.green("✓"),
+        format(
+          "You're logged in as %s (%s)\n",
           chalk.cyan(currentUser.displayName),
           chalk.cyan(currentUser.emailAddress),
-        )}\n`,
+        ),
       )
-    } catch (_) {
-      console.log(
-        `${chalk.red("✗")} ${format(
-          "You could not get logged in to %s with the provided credentials.",
-          chalk.cyan(host),
-        )}\n`,
+    } catch (error) {
+      this.log(
+        chalk.red("✗"),
+        format("Was unable to authenticate you with %s\n", chalk.cyan(host)),
       )
 
-      this.exit(1)
+      return this.exit(1)
     }
   }
 }
