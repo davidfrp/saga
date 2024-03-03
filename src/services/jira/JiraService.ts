@@ -118,8 +118,18 @@ export class JiraService {
     return branch?.name ?? null
   }
 
-  getCurrentUser(): Promise<User> {
-    return this.api.getCurrentUser() as Promise<User>
+  async getCurrentUser(): Promise<User> {
+    const user = await this.api.getCurrentUser()
+
+    if (
+      "accountId" in user &&
+      "emailAddress" in user &&
+      "displayName" in user
+    ) {
+      return user as User
+    }
+
+    throw new Error("Unable to fetch user details from Jira API.")
   }
 
   listProjects(): Promise<Project[]> {

@@ -17,7 +17,8 @@ export default async function (): Promise<string> {
     name: "jiraHostname",
     message: "Enter your Jira host name (fx. your-domain.atlassian.net)",
     validate: (value: string) =>
-      isUrlValid(value) || "You need to enter a valid Jira host name",
+      (isUrlValid(value) && !value.includes("@")) ||
+      "You need to enter a valid Jira host name",
   })
 
   return jiraHostname
