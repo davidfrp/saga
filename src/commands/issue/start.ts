@@ -89,7 +89,14 @@ export default class Start extends AuthCommand {
     const sequencer = this.getSequencer(jira, git)
 
     this.log()
-    await sequencer.run({ issue, transition, branch, baseBranch })
+    await sequencer.run({
+      issue,
+      transition,
+      branch,
+      startingPoint,
+      baseBranch,
+      emptyCommitMessage,
+    })
     this.log()
 
     await this.handleWhatsNext(git, issue)
@@ -131,16 +138,44 @@ export default class Start extends AuthCommand {
       issue: Issue
       transition: Transition
       branch: string
+      startingPoint: string
       baseBranch: string
+      emptyCommitMessage: string
     }>()
 
     sequencer.add({
       titles: ({ branch }) => ({
-        running: format("Switching branch to %s", chalk.cyan(branch)),
-        completed: format("Switched branch to %s", chalk.cyan(branch)),
-        failed: format("Could not switch branch to %s", chalk.cyan(branch)),
+        [ActionSequenceState.Running]: format(
+          "Switching branch to %s",
+          chalk.cyan(branch),
+        ),
+        [ActionSequenceState.Completed]: format(
+          "Switched branch to %s",
+          chalk.cyan(branch),
+        ),
+        [ActionSequenceState.Failed]: format(
+          "Could not switch branch to %s",
+          chalk.cyan(branch),
+        ),
       }),
-      action: () => this.wait(600),
+      action: async ({ branch, startingPoint }) => {
+        await git.branch(["-B", branch, startingPoint, "--track"])
+
+        const currentBranch = await git.getCurrentBranch()
+
+        if (currentBranch !== branch) {
+          throw new Error(
+            format(
+              "Expected current branch to be %s but got %s",
+              branch,
+              currentBranch,
+            ),
+          )
+        }
+
+        // TODO fetch and find in remote branches?
+        // TODO get commits between starting point and current branch (expect length to be 0)
+      },
     })
 
     sequencer.add({
@@ -161,8 +196,9 @@ export default class Start extends AuthCommand {
           chalk.cyan(issue.key),
         ),
       }),
-      action: async (context, sequence) => {
-        await this.wait(1200)
+      action: async ({ issue }) => {
+        // const currentUser = await jira.getCurrentUser()
+        // await jira.assignIssue(issue.key, currentUser.accountId)
       },
     })
 
@@ -186,15 +222,18 @@ export default class Start extends AuthCommand {
         ),
       }),
       action: async ({ issue, transition }, sequence) => {
-        await this.wait(900)
+        if (issue.fields.status.name === transition.name) {
+          sequence.skip(
+            format(
+              "Skipped transition. %s is already in %s",
+              chalk.cyan(issue.key),
+              chalk.cyan(transition.name),
+            ),
+          )
+        }
 
-        sequence.skip(
-          format(
-            "Skipped transition. %s is already in %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(transition.name),
-          ),
-        )
+        // TODO check error handling for if issue key is invalid.
+        // await jira.transitionIssue(issue.key, transition.id)
       },
     })
 
@@ -212,9 +251,14 @@ export default class Start extends AuthCommand {
           chalk.cyan(baseBranch),
         ),
       }),
-      action: async () => {
-        await this.wait(2500)
-        throw new Error("Something went wrong")
+      action: async ({ branch, baseBranch, emptyCommitMessage }) => {
+        console.log({ branch, baseBranch, emptyCommitMessage })
+        // TODO baseBranch should be the remote branch
+        const diff = git.diff([`${baseBranch}..${branch}`])
+
+        if (!diff) {
+          await git.commit(emptyCommitMessage, ["--allow-empty"])
+        }
       },
     })
 
@@ -249,6 +293,7 @@ export default class Start extends AuthCommand {
     const defaultPullRequestTitle = templateFn({ issue, branch })
 
     const pullRequestTitle = await askPrTitle(defaultPullRequestTitle)
+    // TODO validate against pattern
 
     return pullRequestTitle
   }
@@ -347,7 +392,10 @@ export default class Start extends AuthCommand {
 
     const defaultBranchName = templateFn({ issue })
 
-    const branchName = await askBranch(defaultBranchName) // TODO validate branch name
+    const branchName = await askBranch(defaultBranchName)
+    // TODO validate branch name
+    // TODO validate against pattern
+    // TODO check branch doesn't already exist
 
     return branchName
   }

@@ -311,7 +311,29 @@ export class GitService {
     await this.exec(`gh pr edit --remove-reviewer ${reviewers.join(",")}`)
   }
 
+  // TODO is this too specific?
+  async getRemoteNameOfCurrentBranch() {
+    const { stdout } = await this.exec(
+      `git rev-parse --abbrev-ref --symbolic-full-name @{u}`,
+    )
+
+    return stdout.trim()
+  }
+
   async checkout(branch: string, options?: FlagOptions) {
     await this.exec(`git checkout ${branch} ${this.getFlags(options)}`)
+  }
+
+  async branch(options: FlagOptions) {
+    await this.exec(`git branch ${this.getFlags(options)}`)
+  }
+
+  async diff(options?: FlagOptions) {
+    const { stdout } = await this.exec(`git diff ${this.getFlags(options)}`)
+    return stdout
+  }
+
+  async commit(message: string, options?: FlagOptions) {
+    await this.exec(`git commit -m "${message}" ${this.getFlags(options)}`)
   }
 }

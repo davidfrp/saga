@@ -70,13 +70,6 @@ const SAGA_CONFIG_SCHEMA = createSchema({
       "Template used to generate default empty commit messages. Uses the doT template engine.",
     value: "chore: creating pull request",
   },
-  lifeCycleCommands: {
-    description: "Commands to run at different stages of the saga life cycle.",
-    value: {
-      "issue:started": "echo 'issue:started'",
-      "issue:completed": "echo 'issue:completed'",
-    },
-  },
   atlassianApiToken: {
     isSecret: true,
     description: "The Atlassian API-token used to act on your behalf.",
@@ -214,12 +207,6 @@ export abstract class BaseCommand extends Command {
               this.spinner.start(title)
               break
             case ActionSequenceState.Skipped:
-              this.spinner.stopAndPersist({
-                symbol: chalk.yellow("↓"),
-                message: title,
-              })
-              break
-            case ActionSequenceState.SkippedOnError:
               this.spinner.stopAndPersist({
                 symbol: chalk.yellow("↓"),
                 message: title,
