@@ -19,7 +19,7 @@ export enum ActionSequenceState {
 
 export type ActionSequenceTitleResolver<TContext> = (
   context: TContext,
-) => Partial<Readonly<Record<ActionSequenceState, string>>>
+) => Readonly<{ [key in ActionSequenceState]?: string }>
 
 export type ActionSequence<TContext> = {
   /** Resolves the titles for the sequence. */

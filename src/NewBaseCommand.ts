@@ -219,6 +219,12 @@ export abstract class BaseCommand extends Command {
                 message: title,
               })
               break
+            case ActionSequenceState.SkippedOnError:
+              this.spinner.stopAndPersist({
+                symbol: chalk.yellow("↓"),
+                message: title,
+              })
+              break
             case ActionSequenceState.Completed:
               this.spinner.succeed(title)
               break

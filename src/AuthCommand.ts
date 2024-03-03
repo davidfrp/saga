@@ -1,7 +1,7 @@
 import { CommandError } from "@oclif/core/lib/interfaces/index.js"
 import chalk from "chalk"
 import { format } from "node:util"
-import { BaseCommand } from "./BaseCommand.js"
+import { BaseCommand } from "./NewBaseCommand.js"
 import { GitService, errors } from "./services/git/index.js"
 import { JiraService } from "./services/jira/index.js"
 

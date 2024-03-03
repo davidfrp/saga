@@ -1,6 +1,6 @@
 import chalk from "chalk"
 import { format } from "node:util"
-import { BaseCommand } from "../../BaseCommand.js"
+import { BaseCommand } from "../../NewBaseCommand.js"
 
 export default class List extends BaseCommand {
   static aliases: string[] = ["config:ls"]

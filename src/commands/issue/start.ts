@@ -22,20 +22,7 @@ import {
   askStartingPoint,
   askTransition,
 } from "../../ux/prompts/index.js"
-
-interface ActionSequencerContext {
-  git: GitService
-  jira: JiraService
-  issue: Issue
-  branch: string
-  baseBranch: string
-  startingPoint: string
-  transition: Transition
-  shouldAssignToMe: boolean
-  pullRequestTitle: string
-  pullRequestDescription: string
-  emptyCommitMessage: string
-}
+import { ActionSequenceState } from "../../actions/index.js"
 
 export default class Start extends AuthCommand {
   static summary = "Start working on an issue"
@@ -99,25 +86,17 @@ export default class Start extends AuthCommand {
 
     const emptyCommitMessage = this.getEmptyCommitMessage(issue, branch)
 
-    await this.submit({
-      git,
-      jira,
-      issue,
-      branch,
-      baseBranch,
-      startingPoint,
-      transition,
-      shouldAssignToMe,
-      pullRequestTitle,
-      pullRequestDescription,
-      emptyCommitMessage,
-    })
+    const sequencer = this.getSequencer(jira, git)
+
+    this.log()
+    await sequencer.run({ issue, transition, branch, baseBranch })
+    this.log()
 
     await this.handleWhatsNext(git, issue)
   }
 
   private async handleWhatsNext(git: GitService, issue: Issue) {
-    enum Choices {
+    enum Choice {
       Skip = "Skip",
       OpenPullRequest = "Open pull request in browser",
       OpenIssue = "Open issue in browser",
@@ -125,20 +104,20 @@ export default class Start extends AuthCommand {
     }
 
     const choice = await askChoice("What's next?", [
-      Choices.Skip,
-      Choices.OpenPullRequest,
-      Choices.OpenIssue,
-      Choices.OpenBoth,
+      Choice.Skip,
+      Choice.OpenPullRequest,
+      Choice.OpenIssue,
+      Choice.OpenBoth,
     ])
 
     switch (choice) {
-      case Choices.OpenPullRequest:
+      case Choice.OpenPullRequest:
         this.open(await git.fetchPullRequestUrl())
         break
-      case Choices.OpenIssue:
+      case Choice.OpenIssue:
         this.open(issue.url)
         break
-      case Choices.OpenBoth:
+      case Choice.OpenBoth:
         this.open(await git.fetchPullRequestUrl())
         this.open(issue.url)
         break
@@ -147,95 +126,99 @@ export default class Start extends AuthCommand {
     this.log()
   }
 
-  private async submit(context: ActionSequencerContext) {
-    const sequencer = this.initActionSequencer<typeof context>()
+  private getSequencer(jira: JiraService, git: GitService) {
+    const sequencer = this.initActionSequencer<{
+      issue: Issue
+      transition: Transition
+      branch: string
+      baseBranch: string
+    }>()
 
-    sequencer.add(
-      {
-        titles: ({ branch }) => ({
-          running: format("Switching branch to %s", chalk.cyan(branch)),
-          completed: format("Switched branch to %s", chalk.cyan(branch)),
-          failed: format("Could not switch branch to %s", chalk.cyan(branch)),
-        }),
-        action: () => this.wait(600),
+    sequencer.add({
+      titles: ({ branch }) => ({
+        running: format("Switching branch to %s", chalk.cyan(branch)),
+        completed: format("Switched branch to %s", chalk.cyan(branch)),
+        failed: format("Could not switch branch to %s", chalk.cyan(branch)),
+      }),
+      action: () => this.wait(600),
+    })
+
+    sequencer.add({
+      titles: ({ issue }) => ({
+        [ActionSequenceState.Running]: format(
+          "Assigning %s to %s",
+          chalk.cyan(jira.email),
+          chalk.cyan(issue.key),
+        ),
+        [ActionSequenceState.Completed]: format(
+          "Assigned %s to %s",
+          chalk.cyan(jira.email),
+          chalk.cyan(issue.key),
+        ),
+        [ActionSequenceState.Failed]: format(
+          "Could not assign %s to %s",
+          chalk.cyan(jira.email),
+          chalk.cyan(issue.key),
+        ),
+      }),
+      action: async (context, sequence) => {
+        await this.wait(1200)
       },
-      {
-        titles: ({ jira: { email }, issue }) => ({
-          running: format(
-            "Assigning %s to %s",
-            chalk.cyan(email),
-            chalk.cyan(issue.key),
-          ),
-          completed: format(
-            "Assigned %s to %s",
-            chalk.cyan(email),
-            chalk.cyan(issue.key),
-          ),
-          failed: format(
-            "Could not assign %s to %s",
-            chalk.cyan(email),
-            chalk.cyan(issue.key),
-          ),
-        }),
-        action: async (context, sequence) => {
-          await this.wait(1200)
-        },
-      },
-      {
-        titles: ({ issue, transition }) => ({
-          running: format(
-            "Transitioning %s to %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(transition.name),
-          ),
-          skipped: format(
+    })
+
+    sequencer.add({
+      titles: ({ issue, transition }) => ({
+        [ActionSequenceState.Running]: format(
+          "Transitioning %s to %s",
+          chalk.cyan(issue.key),
+          chalk.cyan(transition.name),
+        ),
+        [ActionSequenceState.Completed]: format(
+          "Transitioned %s from %s to %s",
+          chalk.cyan(issue.key),
+          chalk.cyan(issue.fields.status.name),
+          chalk.cyan(transition.name),
+        ),
+        [ActionSequenceState.Failed]: format(
+          "Could not transition %s to %s",
+          chalk.cyan(issue.key),
+          chalk.cyan(transition.name),
+        ),
+      }),
+      action: async ({ issue, transition }, sequence) => {
+        await this.wait(900)
+
+        sequence.skip(
+          format(
             "Skipped transition. %s is already in %s",
             chalk.cyan(issue.key),
             chalk.cyan(transition.name),
           ),
-          completed: format(
-            "Transitioned %s from %s to %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(issue.fields.status.name),
-            chalk.cyan(transition.name),
-          ),
-          failed: format(
-            "Could not transition %s to %s",
-            chalk.cyan(issue.key),
-            chalk.cyan(transition.name),
-          ),
-        }),
-        action: async (_, sequence) => {
-          await this.wait(900)
-          sequence.skip()
-        },
+        )
       },
-      {
-        titles: ({ branch, baseBranch }) => ({
-          running: format(
-            "Creating pull request for %s into %s",
-            chalk.cyan(branch),
-            chalk.cyan(baseBranch),
-          ),
-          completed: "Created pull request",
-          failed: format(
-            "Could not create pull request for %s into %s",
-            chalk.cyan(branch),
-            chalk.cyan(baseBranch),
-          ),
-        }),
-        action: async () => {
-          await this.wait(2500)
-          // throw new Error("Something went wrong")
-        },
+    })
+
+    sequencer.add({
+      titles: ({ branch, baseBranch }) => ({
+        [ActionSequenceState.Running]: format(
+          "Creating pull request for %s into %s",
+          chalk.cyan(branch),
+          chalk.cyan(baseBranch),
+        ),
+        [ActionSequenceState.Completed]: "Created pull request",
+        [ActionSequenceState.Failed]: format(
+          "Could not create pull request for %s into %s",
+          chalk.cyan(branch),
+          chalk.cyan(baseBranch),
+        ),
+      }),
+      action: async () => {
+        await this.wait(2500)
+        throw new Error("Something went wrong")
       },
-    )
+    })
 
-    this.log()
-
-    await sequencer.run(context)
-
-    this.log()
+    return sequencer
   }
 
   private getEmptyCommitMessage(issue: Issue, branch: string) {

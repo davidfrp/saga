@@ -35,13 +35,21 @@ export class GitService {
     }
   }
 
-  async exec(command: string) {
+  async exec(command: string, options?: { throwOnError?: boolean }) {
     this.#events.emit("command", command)
+
+    options = options ?? {
+      throwOnError: true,
+    }
 
     return new Promise<{ stderr: string; stdout: string }>((resolve) => {
       exec(command, (error, stdout, stderr) => {
         if (error) {
           this.#events.emit("error", error)
+
+          if (options?.throwOnError) {
+            throw error
+          }
         }
 
         this.#events.emit("output", stdout)
@@ -96,7 +104,10 @@ export class GitService {
   }
 
   private async isInGitRepository(): Promise<boolean> {
-    const { stderr } = await this.exec("git rev-parse --is-inside-work-tree")
+    const { stderr } = await this.exec("git rev-parse --is-inside-work-tree", {
+      throwOnError: false,
+    })
+
     return !stderr
   }
 
@@ -111,7 +122,10 @@ export class GitService {
   }
 
   private async isGitHubCliAuthenticated(): Promise<boolean> {
-    const { stderr } = await this.exec("gh auth status")
+    const { stderr } = await this.exec("gh auth status", {
+      throwOnError: false,
+    })
+
     return !stderr
   }
 
@@ -138,9 +152,10 @@ export class GitService {
   //   return stdout.trim()
   // }
 
-  async getPullRequestDetails(branch: string) {
+  async fetchPullRequestDetails(branch: string) {
     const { stderr, stdout: json } = await this.exec(
       `gh pr view ${branch} --json number,url,title,body,state,baseRefName,headRefName`,
+      { throwOnError: false },
     )
 
     if (stderr) return null
@@ -182,7 +197,7 @@ export class GitService {
     return openPrExists
   }
 
-  async getCurrentLogin() {
+  async fetchCurrentLogin() {
     const { stdout: json } = await this.exec("gh api /user")
 
     const { login } = JSON.parse(json) as { login: string }
@@ -211,7 +226,7 @@ export class GitService {
       throw new Error("Resource not found")
     }
 
-    const myGitHubLogin = await this.getCurrentLogin()
+    const myGitHubLogin = await this.fetchCurrentLogin()
 
     const teamMembersLogins = teamMembers
       .filter((teamMember) => teamMember.login !== myGitHubLogin)
@@ -265,16 +280,35 @@ export class GitService {
     return uniqueBranches
   }
 
+  async listRemoteBranches() {
+    const { stdout } = await this.exec(
+      "git ls-remote --refs origin | awk '{print $2}' | grep '^refs/heads/' | sed 's/^refs/heads///'",
+    )
+
+    const branches = stdout.split("\n").map((branch) => branch.trim())
+
+    return branches
+  }
+
   async fetchPullRequestUrl() {
     const { stdout: json } = await this.exec("gh pr view --json url")
     return JSON.parse(json).url
   }
 
-  async listRemoteBranches() {
-    const { stdout } = await this.exec(
-      "git ls-remote --refs origin | awk '{print $2}' | grep '^refs/heads/' | sed 's/^refs/heads///'",
-    )
-    return stdout.split("\n").map((branch) => branch.trim())
+  async markPullRequestAsReady() {
+    await this.exec("gh pr ready")
+  }
+
+  async markPullRequestAsDraft() {
+    await this.exec("gh pr ready --undo")
+  }
+
+  async addReviewers(reviewers: string[]) {
+    await this.exec(`gh pr edit --add-reviewer ${reviewers.join(",")}`)
+  }
+
+  async removeReviewers(reviewers: string[]) {
+    await this.exec(`gh pr edit --remove-reviewer ${reviewers.join(",")}`)
   }
 
   async checkout(branch: string, options?: FlagOptions) {
