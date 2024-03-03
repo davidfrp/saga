@@ -1,5 +1,5 @@
 import chalk from "chalk"
-import { BaseCommand } from "../../NewBaseCommand.js"
+import { BaseCommand } from "../../BaseCommand.js"
 
 export default class Logout extends BaseCommand {
   async run() {
