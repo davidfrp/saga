@@ -43,6 +43,13 @@ export class PullRequestMissingError extends GitServiceError {
   }
 }
 
+export class DraftPullRequestNotSupportedError extends GitServiceError {
+  constructor() {
+    super("Draft pull requests are not supported in this repository")
+    this.name = "DraftPullRequestNotSupportedError"
+  }
+}
+
 export class UncommittedChangesError extends GitServiceError {
   constructor() {
     super(`Uncommitted changes found.

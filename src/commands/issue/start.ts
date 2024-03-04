@@ -3,7 +3,9 @@ import chalk from "chalk"
 import doT from "dot"
 import { format } from "node:util"
 import { AuthCommand } from "../../AuthCommand.js"
-import { GitService } from "../../services/git/index.js"
+import { ActionSequenceState } from "../../actions/index.js"
+import { DraftPullRequestNotSupportedError } from "../../services/git/errors.js"
+import { FlagOptions, GitService } from "../../services/git/index.js"
 import {
   Issue,
   JiraService,
@@ -22,7 +24,6 @@ import {
   askStartingPoint,
   askTransition,
 } from "../../ux/prompts/index.js"
-import { ActionSequenceState } from "../../actions/index.js"
 
 export default class Start extends AuthCommand {
   static summary = "Start working on an issue"
@@ -54,9 +55,11 @@ export default class Start extends AuthCommand {
 
     const branch = await this.resolveBranch(git, issue)
 
-    const branches = await git.listPopularBaseBranches()
+    const remote = await this.resolveRemote(git)
 
-    const baseBranch = await this.resolveBaseBranch(git, branches)
+    const baseBranches = await this.resolveBaseBranches(git)
+
+    const baseBranch = await this.resolveBaseBranch(git, baseBranches)
 
     this.log(
       chalk.yellow("!"),
@@ -67,7 +70,10 @@ export default class Start extends AuthCommand {
       ),
     )
 
-    const startingPoint = await this.resolveStartingPoint(branches, baseBranch)
+    const startingPoint = await this.resolveStartingPoint(
+      baseBranches,
+      baseBranch,
+    )
 
     this.log(
       chalk.yellow("!"),
@@ -92,10 +98,14 @@ export default class Start extends AuthCommand {
     await sequencer.run({
       issue,
       transition,
+      shouldAssignToMe,
+      remote,
       branch,
       startingPoint,
       baseBranch,
       emptyCommitMessage,
+      pullRequestTitle,
+      pullRequestDescription,
     })
     this.log()
 
@@ -137,10 +147,14 @@ export default class Start extends AuthCommand {
     const sequencer = this.initActionSequencer<{
       issue: Issue
       transition: Transition
+      shouldAssignToMe: boolean
+      remote: string
       branch: string
       startingPoint: string
       baseBranch: string
       emptyCommitMessage: string
+      pullRequestTitle: string
+      pullRequestDescription: string
     }>()
 
     sequencer.add({
@@ -158,8 +172,8 @@ export default class Start extends AuthCommand {
           chalk.cyan(branch),
         ),
       }),
-      action: async ({ branch, startingPoint }) => {
-        await git.branch(["-B", branch, startingPoint, "--track"])
+      action: async ({ branch, startingPoint, remote }) => {
+        await git.checkout(["-B", branch, startingPoint])
 
         const currentBranch = await git.getCurrentBranch()
 
@@ -173,8 +187,20 @@ export default class Start extends AuthCommand {
           )
         }
 
-        // TODO fetch and find in remote branches?
-        // TODO get commits between starting point and current branch (expect length to be 0)
+        await git.push(["-u", remote, branch])
+
+        const remoteBranch = await git.getRemoteBranch(branch)
+        const expectedRemoteBranch = format("%s/%s", remote, branch)
+
+        if (remoteBranch !== expectedRemoteBranch) {
+          throw new Error(
+            format(
+              "Expected remote branch to be %s but got %s",
+              expectedRemoteBranch,
+              remoteBranch,
+            ),
+          )
+        }
       },
     })
 
@@ -196,9 +222,13 @@ export default class Start extends AuthCommand {
           chalk.cyan(issue.key),
         ),
       }),
-      action: async ({ issue }) => {
-        // const currentUser = await jira.getCurrentUser()
-        // await jira.assignIssue(issue.key, currentUser.accountId)
+      action: async ({ shouldAssignToMe, issue }, sequence) => {
+        if (!shouldAssignToMe) {
+          sequence.skip("Skipped assigning issue")
+        }
+
+        const currentUser = await jira.getCurrentUser()
+        await jira.assignIssue(issue.key, currentUser.accountId)
       },
     })
 
@@ -232,8 +262,7 @@ export default class Start extends AuthCommand {
           )
         }
 
-        // TODO check error handling for if issue key is invalid.
-        // await jira.transitionIssue(issue.key, transition.id)
+        await jira.transitionIssue(issue.key, transition.id)
       },
     })
 
@@ -251,13 +280,38 @@ export default class Start extends AuthCommand {
           chalk.cyan(baseBranch),
         ),
       }),
-      action: async ({ branch, baseBranch, emptyCommitMessage }) => {
-        console.log({ branch, baseBranch, emptyCommitMessage })
-        // TODO baseBranch should be the remote branch
-        const diff = git.diff([`${baseBranch}..${branch}`])
+      action: async ({
+        branch,
+        baseBranch,
+        emptyCommitMessage,
+        pullRequestTitle,
+        pullRequestDescription,
+      }) => {
+        const hasCommitsBetween = Boolean(
+          await git.diff([`${baseBranch}..${branch}`]),
+        )
 
-        if (!diff) {
-          await git.commit(emptyCommitMessage, ["--allow-empty"])
+        if (!hasCommitsBetween) {
+          await git.commit(emptyCommitMessage, ["--allow-empty", "--no-verify"])
+          await git.push()
+        }
+
+        const createPullRequestFlagOptions: FlagOptions = [
+          `--title "${pullRequestTitle}"`,
+          `--body "${pullRequestDescription}"`,
+          `--base ${baseBranch}`,
+          `--head ${branch}`,
+        ]
+
+        try {
+          await git.createPullRequest([
+            ...createPullRequestFlagOptions,
+            "--draft",
+          ])
+        } catch (error) {
+          if (error instanceof DraftPullRequestNotSupportedError) {
+            await git.createPullRequest(createPullRequestFlagOptions)
+          }
         }
       },
     })
@@ -385,6 +439,40 @@ export default class Start extends AuthCommand {
     return branch
   }
 
+  private async resolveBaseBranches(git: GitService) {
+    const [popularBaseBranches, remoteBranches] = await Promise.all([
+      git.listPopularBaseBranches(),
+      git.listRemoteBranches(),
+    ])
+
+    const baseBranches = [
+      ...new Set([...popularBaseBranches, ...remoteBranches]),
+    ].filter((branch) =>
+      remoteBranches.find((remoteBranch) =>
+        remoteBranch.endsWith(`/${branch}`),
+      ),
+    )
+
+    return baseBranches
+  }
+
+  private async resolveRemote(git: GitService) {
+    const remotes = await git.listRemotes()
+
+    if (remotes.length > 1) {
+      return await askChoice("Select a remote", remotes)
+    } else if (remotes.length === 1) {
+      return remotes[0]
+    } else {
+      this.log(
+        chalk.red("✗"),
+        "No remotes found. Please add a remote to continue.",
+      )
+
+      throw new ExitError(1)
+    }
+  }
+
   private async resolveBranch(git: GitService, issue: Issue) {
     const template = this.config.saga.get("branchNameTemplate")
 
@@ -448,7 +536,7 @@ export default class Start extends AuthCommand {
     const shouldCheckOutLinkedBranch = await askCheckOutLinkedBranch()
 
     if (shouldCheckOutLinkedBranch) {
-      await git.checkout(linkedBranch, ["--track"])
+      await git.checkout([linkedBranch, "--track"])
       throw new ExitError(0)
     }
   }

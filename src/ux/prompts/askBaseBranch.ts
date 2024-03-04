@@ -8,7 +8,7 @@ export default async function (branches: string[]): Promise<string> {
   const { baseBranch } = await inquirer.prompt([
     {
       type: "autocomplete",
-      name: "issue",
+      name: "baseBranch",
       message: "Which branch should your pull request merge into?",
       source: createSourceFn(branches),
     },

@@ -1,6 +1,7 @@
 import { exec } from "node:child_process"
 import { EventEmitter } from "node:events"
 import {
+  DraftPullRequestNotSupportedError,
   GitHubCliMissingError,
   GitHubCliUnauthenticatedError,
   GitMissingError,
@@ -8,7 +9,7 @@ import {
   UncommittedChangesError,
 } from "./errors.js"
 
-type FlagOptions = { [key: string]: boolean } | string[]
+export type FlagOptions = (string | { [key: string]: boolean })[]
 
 export type GitServiceOptions = {
   onCommand?: (command: string) => void
@@ -42,21 +43,23 @@ export class GitService {
       throwOnError: true,
     }
 
-    return new Promise<{ stderr: string; stdout: string }>((resolve) => {
-      exec(command, (error, stdout, stderr) => {
-        if (error) {
-          this.#events.emit("error", error)
+    return new Promise<{ stderr: string; stdout: string }>(
+      (resolve, reject) => {
+        exec(command, (error, stdout, stderr) => {
+          if (error) {
+            this.#events.emit("error", error)
 
-          if (options?.throwOnError) {
-            throw error
+            if (options?.throwOnError) {
+              reject(error)
+            }
           }
-        }
 
-        this.#events.emit("output", stdout)
+          this.#events.emit("output", stdout)
 
-        resolve({ stderr, stdout })
-      })
-    })
+          resolve({ stderr, stdout })
+        })
+      },
+    )
   }
 
   async checkRequirements(): Promise<this> {
@@ -134,14 +137,18 @@ export class GitService {
       return ""
     }
 
-    if (Array.isArray(options)) {
-      return options.filter(Boolean).join(" ")
-    }
+    const flags = options.map((option) => {
+      if (typeof option === "string") {
+        return option
+      }
 
-    return Object.entries(options)
-      .map(([flag, value]) => (value ? flag : ""))
-      .filter(Boolean)
-      .join(" ")
+      return Object.entries(option)
+        .map(([flag, value]) => (value ? flag : ""))
+        .filter(Boolean)
+        .join(" ")
+    })
+
+    return flags.join(" ")
   }
 
   // private async getMainBranch(): Promise<string> {
@@ -273,19 +280,49 @@ export class GitService {
         getStartOfWeek(new Date(a.updatedAt)).getTime(),
     )
 
-    const uniqueBranches = Array.from(
-      new Set(pullRequestsSortedByWeek.map((pr) => pr.baseRefName)),
+    const popularBranches = Array.from(
+      new Set(
+        pullRequestsSortedByWeek.map((pullRequest) => pullRequest.baseRefName),
+      ),
     )
 
-    return uniqueBranches
+    return popularBranches
+  }
+
+  async createPullRequest(options: FlagOptions) {
+    try {
+      await this.exec(`gh pr create ${this.getFlags(options)}`)
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes(
+          "Draft pull requests are not supported in this repository.",
+        )
+      ) {
+        throw new DraftPullRequestNotSupportedError()
+      }
+
+      throw error
+    }
+  }
+
+  async getRemoteBranch(branch: string) {
+    const { stdout } = await this.exec(
+      `git rev-parse --abbrev-ref ${branch}@{upstream}`,
+    )
+
+    return stdout.trim()
   }
 
   async listRemoteBranches() {
     const { stdout } = await this.exec(
-      "git ls-remote --refs origin | awk '{print $2}' | grep '^refs/heads/' | sed 's/^refs/heads///'",
+      "git branch -r --format='%(refname:short)'",
     )
 
-    const branches = stdout.split("\n").map((branch) => branch.trim())
+    const branches = stdout
+      .split("\n")
+      .map((branch) => branch.trim())
+      .filter(Boolean)
 
     return branches
   }
@@ -311,17 +348,33 @@ export class GitService {
     await this.exec(`gh pr edit --remove-reviewer ${reviewers.join(",")}`)
   }
 
-  // TODO is this too specific?
-  async getRemoteNameOfCurrentBranch() {
-    const { stdout } = await this.exec(
-      `git rev-parse --abbrev-ref --symbolic-full-name @{u}`,
-    )
+  // // TODO is this too specific?
+  // async getRemoteNameOfCurrentBranch() {
+  //   const { stdout } = await this.exec(
+  //     `git rev-parse --abbrev-ref --symbolic-full-name @{u}`,
+  //   )
 
-    return stdout.trim()
+  //   return stdout.trim()
+  // }
+
+  // async getRemote(branch?: string) {
+  //   const { stdout } = await this.exec(
+  //     `git config --get branch.${branch}.remote`,
+  //   )
+
+  //   return stdout.trim()
+  // }
+
+  async listRemotes() {
+    const { stdout } = await this.exec("git remote")
+    return stdout
+      .split("\n")
+      .map((remote) => remote.trim())
+      .filter(Boolean)
   }
 
-  async checkout(branch: string, options?: FlagOptions) {
-    await this.exec(`git checkout ${branch} ${this.getFlags(options)}`)
+  async checkout(options: FlagOptions) {
+    await this.exec(`git checkout ${this.getFlags(options)}`)
   }
 
   async branch(options: FlagOptions) {
@@ -335,5 +388,9 @@ export class GitService {
 
   async commit(message: string, options?: FlagOptions) {
     await this.exec(`git commit -m "${message}" ${this.getFlags(options)}`)
+  }
+
+  async push(options?: FlagOptions) {
+    await this.exec(`git push ${this.getFlags(options)}`)
   }
 }

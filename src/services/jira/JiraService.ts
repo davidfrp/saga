@@ -129,7 +129,7 @@ export class JiraService {
       return user as User
     }
 
-    throw new Error("Unable to fetch user details from Jira API.")
+    throw new Error("Unexpected user response")
   }
 
   listProjects(): Promise<Project[]> {
