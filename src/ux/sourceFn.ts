@@ -53,7 +53,7 @@ export type SourceFnOptions<T> = {
   meta?: MetaExtractor<T>
 }
 
-export function createSourceFn<T extends Record<string, unknown> | string>(
+export function createSourceFn<T extends object | string>(
   items: T[],
   options?: SourceFnOptions<T>,
 ) {
@@ -66,9 +66,7 @@ export function createSourceFn<T extends Record<string, unknown> | string>(
   return sourceFn
 }
 
-function createColumns<T extends Record<string, unknown> | string>(
-  items: T[],
-): Column<T>[] {
+function createColumns<T extends object | string>(items: T[]): Column<T>[] {
   if (items.every((item) => typeof item === "string")) {
     return [{ value: (item) => String(item) }]
   }
@@ -84,7 +82,7 @@ function createColumns<T extends Record<string, unknown> | string>(
     )
 }
 
-function createRows<T extends Record<string, unknown> | string>(
+function createRows<T extends object | string>(
   items: T[],
   options?: SourceFnOptions<T>,
 ) {

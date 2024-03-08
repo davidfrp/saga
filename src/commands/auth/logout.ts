@@ -4,6 +4,8 @@ import { BaseCommand } from "../../BaseCommand.js"
 export default class Logout extends BaseCommand {
   async run() {
     this.config.saga.set("project", "")
+    this.config.saga.set("workingStatus", "")
+    this.config.saga.set("readyForReviewStatus", "")
     this.config.saga.set("email", "")
     this.config.saga.set("jiraHostname", "")
 

@@ -6,7 +6,7 @@ import { GitService, errors } from "./services/git/index.js"
 import { JiraService } from "./services/jira/index.js"
 
 export abstract class AuthCommand extends BaseCommand {
-  protected async catch(error: CommandError) {
+  protected override async catch(error: CommandError) {
     if (error instanceof errors.GitServiceError) {
       this.log(`\n${chalk.red("✗")} ${error.message}\n`)
       return this.exit(1)
@@ -15,8 +15,8 @@ export abstract class AuthCommand extends BaseCommand {
     return super.catch(error)
   }
 
-  protected async init() {
-    const authenticated = await this.checkAuthentication()
+  protected override async init() {
+    const authenticated = await this.checkHasAllCredentials()
 
     if (!authenticated) {
       this.log(
@@ -30,16 +30,18 @@ export abstract class AuthCommand extends BaseCommand {
     }
   }
 
-  protected async checkAuthentication() {
+  protected async getCredentials() {
     const email = this.config.saga.get("email")
-    const jiraHostname = this.config.saga.get("jiraHostname")
-    const atlassianApiToken = await this.config.saga.getSecret(
-      "atlassianApiToken",
-    )
+    const host = this.config.saga.get("jiraHostname")
+    const apiToken = await this.config.saga.getSecret("atlassianApiToken")
 
-    const hasAllCredentials = Boolean(
-      email && jiraHostname && atlassianApiToken,
-    )
+    return { email, host, apiToken }
+  }
+
+  protected async checkHasAllCredentials() {
+    const { email, host, apiToken } = await this.getCredentials()
+
+    const hasAllCredentials = Boolean(email && host && apiToken)
 
     return hasAllCredentials
   }
@@ -59,12 +61,8 @@ export abstract class AuthCommand extends BaseCommand {
   public async initJiraService() {
     const host = this.config.saga.get("jiraHostname")
     const email = this.config.saga.get("email")
-    const token = await this.config.saga.getSecret("atlassianApiToken")
+    const apiToken = await this.config.saga.getSecret("atlassianApiToken")
 
-    if (!token) {
-      throw new Error("Atlassian API-token not found in keychain.")
-    }
-
-    return new JiraService({ host, email, token })
+    return new JiraService({ host, email, apiToken })
   }
 }

@@ -6,12 +6,13 @@ import { exec } from "node:child_process"
 import { resolve } from "node:path"
 import { format } from "node:util"
 import ora, { Ora } from "ora"
+import { Configuration, createSchema } from "./Configuration.js"
+import { Logger } from "./Logger.js"
 import {
   ActionSequenceState,
   ActionSequencer,
   ActionSequencerOptions,
 } from "./actions/index.js"
-import { Configuration, Logger, createSchema } from "./configuration/index.js"
 
 const SAGA_CONFIG_SCHEMA = createSchema({
   jiraHostname: {
@@ -104,7 +105,7 @@ export abstract class BaseCommand extends Command {
 
     if (error instanceof ExitError) return
 
-    this.logger.log(error.stack ?? error.message)
+    this.logger.log(error.stack ?? error.message ?? JSON.stringify(error))
     await this.logger.save()
 
     this.log(

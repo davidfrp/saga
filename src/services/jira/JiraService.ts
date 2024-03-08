@@ -1,38 +1,81 @@
-import JiraApi from "jira-client"
-import fetch from "node-fetch"
-import { DevStatusDetail, Issue, Project, Transition, User } from "./types.js"
+import { Version3Client as JiraClient } from "jira.js"
+import { Issue } from "jira.js/out/version3/models"
+import zod from "zod"
+import { JiraUnauthenticatedError } from "./errors.js"
 
 export type JiraServiceOptions = {
   host: string
   email: string
-  token: string
+  apiToken: string
 }
 
 export class JiraService {
+  readonly #client: JiraClient
+  readonly #colorCache: { [key: string]: string } = {}
+
   readonly host: string
   readonly email: string
 
-  private readonly api: JiraApi
-
   constructor(options: JiraServiceOptions) {
-    this.host = options.host
-    this.email = options.email
+    const { host, email, apiToken } = options
 
-    this.api = new JiraApi({
-      protocol: "https",
-      host: options.host,
-      username: options.email,
-      password: options.token,
-      apiVersion: "3",
-      strictSSL: true,
+    this.host = host
+    this.email = email
+
+    this.#client = new JiraClient({
+      host,
+      authentication: {
+        basic: {
+          email,
+          apiToken,
+        },
+      },
     })
   }
 
-  private colorCache: { [key: string]: string } = {}
+  public fetchAllPages = async <T>(
+    fetcher: (startAt: number) => Promise<{
+      startAt: number
+      maxResults: number
+      values: T[]
+      isLast?: boolean
+    }>,
+  ) => {
+    const items: T[] = []
+    let startAt = 0
+    let page
 
-  private async colorFromSvg(svgUrl: string) {
-    if (this.colorCache[svgUrl]) {
-      return this.colorCache[svgUrl]
+    do {
+      page = await fetcher(startAt)
+      items.push(...page.values)
+      startAt = page.startAt + page.maxResults
+    } while (page.isLast === false || page.values.length === page.maxResults)
+
+    return items
+  }
+
+  isUnauthenticatedError(error: unknown): error is JiraUnauthenticatedError {
+    return (
+      error !== null &&
+      typeof error === "object" &&
+      "status" in error &&
+      error.status === 401
+    )
+  }
+
+  public extractIssueKey(projectKey: string, value: string) {
+    const keyPattern = new RegExp(`${projectKey}-\\d+`, "i")
+    const match = value.match(keyPattern)
+    return match ? match[0] : null
+  }
+
+  public constructIssueUrl(issue: Issue) {
+    return `https://${this.host}/browse/${issue.key}`
+  }
+
+  public async colorFromSvg(svgUrl: string) {
+    if (this.#colorCache[svgUrl]) {
+      return this.#colorCache[svgUrl]
     }
 
     const response = await fetch(svgUrl)
@@ -41,133 +84,48 @@ export class JiraService {
     const colorCode = color ? `#${color}` : undefined
 
     if (colorCode) {
-      this.colorCache[svgUrl] = colorCode
+      this.#colorCache[svgUrl] = colorCode
     }
 
     return colorCode
   }
 
-  private async fillIssue(issue: Issue): Promise<Issue> {
-    issue.url = `https://${this.host}/browse/${issue.key}`
-    issue.fields.issuetype.color = await this.colorFromSvg(
-      issue.fields.issuetype.iconUrl,
-    )
-
-    if (issue.fields.lastViewed) {
-      issue.fields.lastViewed = new Date(issue.fields.lastViewed)
-    }
-
-    if (issue.fields.parent) {
-      issue.fields.parent = await this.fillIssue(issue.fields.parent)
-    }
-
-    return issue
+  public get client() {
+    return this.#client
   }
 
-  // Sorting priority:
-  // - sort: lastViewed
-  // - group: issue type
-  //   - if type is "Bug", "Task", "Spike", "Story", "Subtask", put on top.
-  //   - if type is "Epic", put on bottom.
-  // - group: assignee
-  //   - if assigned to me, put on top
-  //   - if assigned to someone else, put on bottom
-  //   - if unassigned, put in the middle
+  public getIssueDevStatus = async (issue: Issue) => {
+    const devStatusUrl = new URL(`/rest/dev-status/1.0/issue/detail`, this.host)
 
-  // getDevStatusSummary(issueIdOrKey: string) {
-  //   return this.api.getDevStatusSummary(issueIdOrKey)
-  // }
+    devStatusUrl.searchParams.append("issueId", issue.id)
+    devStatusUrl.searchParams.append("applicationType", "GitHub")
+    devStatusUrl.searchParams.append("dataType", "pullrequest")
 
-  // async getDevStatusDetail(issueIdOrKey: string) {
-  //   const details = await (this.api.getDevStatusDetail(
-  //     issueIdOrKey,
-  //     "GitHub",
-  //     "branch",
-  //   ) as Promise<{
-  //     detail: {
-  //       branches: {
-  //         name: string
-  //         url: string
-  //       }[]
-  //       pullRequests: {
-  //         name: string
-  //         url: string
-  //         status: string
-  //       }[]
-  //     }
-  //   }>)
-
-  //   return details
-  // }
-
-  extractIssueKey(projectKey: string, value: string) {
-    const keyPattern = new RegExp(`${projectKey}-\\d+`, "i")
-    const match = value.match(keyPattern)
-    return match ? match[0] : null
-  }
-
-  async getLinkedBranch(issueIdOrKey: string): Promise<string | null> {
-    const response = await this.api.getDevStatusDetail(
-      issueIdOrKey,
-      "GitHub",
-      "branch",
-    )
-
-    const detail = response.detail.at(0) as DevStatusDetail | undefined
-    const branch = detail?.branches.at(0)
-    return branch?.name ?? null
-  }
-
-  async getCurrentUser(): Promise<User> {
-    const user = await this.api.getCurrentUser()
-
-    if (
-      "accountId" in user &&
-      "emailAddress" in user &&
-      "displayName" in user
-    ) {
-      return user as User
-    }
-
-    throw new Error("Unexpected user response")
-  }
-
-  listProjects(): Promise<Project[]> {
-    return this.api.listProjects() as Promise<Project[]>
-  }
-
-  async findIssue(issueIdOrKey: string): Promise<Issue | null> {
-    try {
-      const response = await this.api.getIssue(issueIdOrKey)
-      return this.fillIssue(response as Issue)
-    } catch (error) {}
-    return null
-  }
-
-  async findIssuesByJql(jql: string): Promise<Issue[]> {
-    const response = await this.api.searchJira(jql)
-    return Promise.all(
-      response.issues.map((issue: Issue) => this.fillIssue(issue)),
-    )
-  }
-
-  async listTransitions(issueKeyOrId: string): Promise<Transition[]> {
-    const response = await this.api.listTransitions(issueKeyOrId)
-    return response.transitions as Transition[]
-  }
-
-  async transitionIssue(
-    issueKeyOrId: string,
-    transitionId: string,
-  ): Promise<void> {
-    await this.api.transitionIssue(issueKeyOrId, {
-      transition: {
-        id: transitionId,
-      },
+    const devStatusSchema = zod.object({
+      detail: zod.array(
+        zod.object({
+          branches: zod.array(
+            zod.object({
+              name: zod.string(),
+              url: zod.string(),
+              createPullRequestUrl: zod.string(),
+            }),
+          ),
+          pullRequests: zod.array(
+            zod.object({
+              name: zod.string(),
+              url: zod.string(),
+              status: zod.string(),
+            }),
+          ),
+        }),
+      ),
     })
-  }
 
-  async assignIssue(issueKeyOrId: string, assigneeId: string): Promise<void> {
-    await this.api.updateAssigneeWithId(issueKeyOrId, assigneeId)
+    const response = await this.client.sendRequestFullResponse<
+      zod.infer<typeof devStatusSchema>
+    >({ url: devStatusUrl.toString() })
+
+    return devStatusSchema.parse(response.data)
   }
 }

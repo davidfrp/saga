@@ -3,72 +3,42 @@ import chalk from "chalk"
 import { format } from "util"
 import { AuthCommand } from "../../AuthCommand.js"
 import {
-  askEmail,
-  askHostname,
-  askLoginAgain,
-  askToken,
+  chooseEmail,
+  chooseHostname,
+  chooseLoginAgain,
+  chooseToken,
 } from "../../ux/prompts/index.js"
 
+export type Credentials = {
+  email: string
+  host: string
+  apiToken: string
+}
+
 export default class Login extends AuthCommand {
-  protected override async checkAuthentication() {
+  protected override async checkHasAllCredentials() {
     return true
   }
 
-  async run() {
-    this.spinner.start()
+  public override async run() {
+    let credentials = await this.getCredentials()
 
-    let email = this.config.saga.get("email")
-    let host = this.config.saga.get("jiraHostname")
-    let token = await this.config.saga.getSecret("atlassianApiToken")
+    const shouldReauthenticate = await this.resolveShouldReauthenticate(
+      credentials,
+    )
 
-    const hasAllCredentials = email && host && token
-
-    let shouldReauthenticate = false
-
-    if (hasAllCredentials) {
-      try {
-        const jira = await this.initJiraService()
-        await jira.getCurrentUser()
-
-        this.spinner.stop()
-
-        shouldReauthenticate = await askLoginAgain()
-      } catch (error) {
-        shouldReauthenticate = true
-      }
-
-      if (!shouldReauthenticate) {
-        throw new ExitError(0)
-      }
+    if (!shouldReauthenticate) {
+      throw new ExitError(0)
     }
 
-    this.spinner.stop()
-
-    if (!email || shouldReauthenticate) {
-      email = await askEmail()
-      this.config.saga.set("email", email)
-    }
-
-    if (!host || shouldReauthenticate) {
-      host = await askHostname()
-      this.config.saga.set("jiraHostname", host)
-    }
-
-    if (!token || shouldReauthenticate) {
-      token = await askToken()
-      await this.config.saga.setSecret("atlassianApiToken", token)
-    }
+    credentials = await this.reauthenticate(credentials)
 
     this.log()
-
-    this.spinner.start()
 
     const jira = await this.initJiraService()
 
     try {
-      const currentUser = await jira.getCurrentUser()
-
-      this.spinner.stop()
+      const currentUser = await jira.client.myself.getCurrentUser()
 
       this.log(
         chalk.green("✓"),
@@ -79,11 +49,12 @@ export default class Login extends AuthCommand {
         ),
       )
     } catch (error) {
-      this.spinner.stop()
-
       this.log(
         chalk.red("✗"),
-        format("Was unable to authenticate you with %s\n", chalk.cyan(host)),
+        format(
+          "Was unable to authenticate you with %s\n",
+          chalk.cyan(credentials.host),
+        ),
       )
 
       throw new ExitError(1)
@@ -92,5 +63,37 @@ export default class Login extends AuthCommand {
     this.config.saga.set("project", "")
     this.config.saga.set("workingStatus", "")
     this.config.saga.set("readyForReviewStatus", "")
+  }
+
+  private async reauthenticate(credentials: Credentials) {
+    let { email, host, apiToken } = credentials
+
+    email = await chooseEmail()
+    this.config.saga.set("email", email)
+
+    host = await chooseHostname()
+    this.config.saga.set("jiraHostname", host)
+
+    apiToken = await chooseToken()
+    await this.config.saga.setSecret("atlassianApiToken", apiToken)
+
+    return { email, host, apiToken }
+  }
+
+  private async resolveShouldReauthenticate(credentials: Credentials) {
+    const { email, host, apiToken } = credentials
+    let shouldReauthenticate = true
+
+    if (email && host && apiToken) {
+      try {
+        const jira = await this.initJiraService()
+        await jira.client.myself.getCurrentUser()
+        shouldReauthenticate = await chooseLoginAgain()
+      } catch (error) {
+        shouldReauthenticate = true
+      }
+    }
+
+    return shouldReauthenticate
   }
 }

@@ -3,7 +3,7 @@ import { format } from "node:util"
 import { BaseCommand } from "../../BaseCommand.js"
 
 export default class List extends BaseCommand {
-  static aliases: string[] = ["config:ls"]
+  static override aliases: string[] = ["config:ls"]
 
   async run() {
     this.log(

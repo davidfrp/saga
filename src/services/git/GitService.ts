@@ -74,10 +74,9 @@ export class GitService {
         }
       }
 
-      // TODO move assertNoUncommittedChanges into the commands where needed instead?
       const assertNoUncommittedChanges = async () => {
         if (await this.hasUncommittedChanges()) {
-          // throw new UncommittedChangesError() // TODO uncomment this
+          throw new UncommittedChangesError()
         }
       }
 
@@ -150,14 +149,6 @@ export class GitService {
 
     return flags.join(" ")
   }
-
-  // private async getMainBranch(): Promise<string> {
-  //   const { stdout } = await this.exec(
-  //     "git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@'",
-  //   )
-
-  //   return stdout.trim()
-  // }
 
   async fetchPullRequestDetails(branch: string) {
     const { stderr, stdout: json } = await this.exec(
@@ -327,9 +318,20 @@ export class GitService {
     return branches
   }
 
+  async listLocalBranches() {
+    const { stdout } = await this.exec("git branch --format='%(refname:short)'")
+
+    const branches = stdout
+      .split("\n")
+      .map((branch) => branch.trim())
+      .filter(Boolean)
+
+    return branches
+  }
+
   async fetchPullRequestUrl() {
     const { stdout: json } = await this.exec("gh pr view --json url")
-    return JSON.parse(json).url
+    return JSON.parse(json).url as string
   }
 
   async markPullRequestAsReady() {
@@ -348,22 +350,13 @@ export class GitService {
     await this.exec(`gh pr edit --remove-reviewer ${reviewers.join(",")}`)
   }
 
-  // // TODO is this too specific?
-  // async getRemoteNameOfCurrentBranch() {
-  //   const { stdout } = await this.exec(
-  //     `git rev-parse --abbrev-ref --symbolic-full-name @{u}`,
-  //   )
+  async isBranchNameValid(branch: string): Promise<boolean> {
+    const { stderr } = await this.exec(
+      `git check-ref-format --branch ${branch}`,
+    )
 
-  //   return stdout.trim()
-  // }
-
-  // async getRemote(branch?: string) {
-  //   const { stdout } = await this.exec(
-  //     `git config --get branch.${branch}.remote`,
-  //   )
-
-  //   return stdout.trim()
-  // }
+    return !stderr
+  }
 
   async listRemotes() {
     const { stdout } = await this.exec("git remote")

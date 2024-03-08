@@ -1,7 +1,7 @@
 import chalk from "chalk"
 import { AuthCommand } from "../../AuthCommand.js"
 
-export default class Status extends AuthCommand {
+export default class Token extends AuthCommand {
   async run() {
     const atlassianApiToken = await this.config.saga.getSecret(
       "atlassianApiToken",

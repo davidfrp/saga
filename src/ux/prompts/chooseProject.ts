@@ -1,9 +1,11 @@
 import inquirer from "inquirer"
 import inquirerPrompt from "inquirer-autocomplete-prompt"
-import { Project } from "../../services/jira/types.js"
+import { Project } from "jira.js/out/version3/models/index.js"
 import { createSourceFn } from "../sourceFn.js"
 
-export default async function (projects: Project[]): Promise<Project> {
+export const chooseProject = async function (
+  projects: Project[],
+): Promise<Project> {
   inquirer.registerPrompt("autocomplete", inquirerPrompt)
 
   const { project } = await inquirer.prompt([
@@ -18,7 +20,7 @@ export default async function (projects: Project[]): Promise<Project> {
             maxWidth: 10,
           },
           {
-            value: (project) => project.name,
+            value: (project) => project.name.trim(),
           },
         ],
       }),

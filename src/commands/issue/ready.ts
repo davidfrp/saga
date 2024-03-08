@@ -1,45 +1,69 @@
+import { Flags } from "@oclif/core"
 import { ExitError } from "@oclif/core/lib/errors/index.js"
 import chalk from "chalk"
+import { Issue, IssueTransition } from "jira.js/out/version3/models/index.js"
 import { format } from "node:util"
 import { AuthCommand } from "../../AuthCommand.js"
 import { ActionSequenceState } from "../../actions/index.js"
 import { GitService } from "../../services/git/index.js"
-import { Issue, JiraService, Transition } from "../../services/jira/index.js"
+import { JiraService, StatusCategory } from "../../services/jira/index.js"
 import {
-  askChecklist,
-  askChoice,
-  askTransition,
+  chooseChecklist,
+  chooseChoice,
+  chooseTransition,
 } from "../../ux/prompts/index.js"
 
 export default class Ready extends AuthCommand {
-  static summary = "Start working on an issue"
+  static override summary = "Mark an issue as ready for review"
 
-  static args = {}
-
-  static flags = {}
+  static override flags = {
+    // reviewer: Flags.string({
+    //   char: "r",
+    //   description: "Reviewers to add to the pull request, separated by commas",
+    // }),
+    undo: Flags.boolean({
+      char: "u",
+      description:
+        "Mark the pull request as a draft and transition the issue to its working status",
+    }),
+  }
 
   async run() {
+    const { flags } = await this.parse(Ready)
+
     this.spinner.start()
 
-    const jira = await this.initJiraService()
-    const git = await this.initGitService()
+    const [jira, git] = await Promise.all([
+      this.initJiraService(),
+      this.initGitService(),
+    ])
 
     const issue = await this.resolveIssue(jira, git)
 
-    const transition = await this.resolveTransition(jira, issue)
+    const shouldUndo = flags.undo
 
-    const reviewers = await this.resolveReviewers(git)
+    const transition = await this.resolveIssueTransition(
+      jira,
+      issue,
+      shouldUndo,
+    )
 
-    const sequencer = this.getSequencer(jira, git)
+    const reviewers = await this.resolveReviewers(git, shouldUndo)
+
+    const sequencer = this.getSequencer(jira, git, shouldUndo)
 
     this.log()
     await sequencer.run({ issue, transition, reviewers })
     this.log()
 
-    await this.handleWhatsNext(git, issue)
+    await this.handleWhatsNext(jira, git, issue)
   }
 
-  private async handleWhatsNext(git: GitService, issue: Issue) {
+  private async handleWhatsNext(
+    jira: JiraService,
+    git: GitService,
+    issue: Issue,
+  ) {
     enum Choice {
       Skip = "Skip",
       OpenPullRequest = "Open pull request in browser",
@@ -47,7 +71,7 @@ export default class Ready extends AuthCommand {
       OpenBoth = "Open issue and pull request in browser",
     }
 
-    const choice = await askChoice("What's next?", [
+    const choice = await chooseChoice("What's next?", [
       Choice.Skip,
       Choice.OpenPullRequest,
       Choice.OpenIssue,
@@ -59,21 +83,25 @@ export default class Ready extends AuthCommand {
         this.open(await git.fetchPullRequestUrl())
         break
       case Choice.OpenIssue:
-        this.open(issue.url)
+        this.open(jira.constructIssueUrl(issue))
         break
       case Choice.OpenBoth:
         this.open(await git.fetchPullRequestUrl())
-        this.open(issue.url)
+        this.open(jira.constructIssueUrl(issue))
         break
     }
 
     this.log()
   }
 
-  private getSequencer(jira: JiraService, git: GitService) {
+  private getSequencer(
+    jira: JiraService,
+    git: GitService,
+    shouldUndo: boolean,
+  ) {
     const sequencer = this.initActionSequencer<{
       issue: Issue
-      transition: Transition
+      transition: IssueTransition
       reviewers: string[]
     }>()
 
@@ -107,23 +135,43 @@ export default class Ready extends AuthCommand {
           )
         }
 
-        await jira.transitionIssue(issue.key, transition.id)
+        await jira.client.issues.doTransition({
+          issueIdOrKey: issue.key,
+          transition,
+        })
       },
     })
 
-    sequencer.add({
-      titles: () => ({
-        [ActionSequenceState.Running]:
-          "Marking pull request as ready for review",
-        [ActionSequenceState.Completed]:
-          "Marked pull request as ready for review",
-        [ActionSequenceState.Failed]:
-          "Could not mark pull request as ready for review",
-      }),
-      action: async () => {
-        await git.markPullRequestAsReady()
-      },
-    })
+    if (shouldUndo) {
+      sequencer.add({
+        titles: () => ({
+          [ActionSequenceState.Running]: "Marking pull request as draft",
+          [ActionSequenceState.Completed]: "Marked pull request as draft",
+          [ActionSequenceState.Failed]: "Could not mark pull request as draft",
+        }),
+        action: async () => {
+          await git.markPullRequestAsDraft()
+        },
+      })
+    } else {
+      sequencer.add({
+        titles: () => ({
+          [ActionSequenceState.Running]:
+            "Marking pull request as ready for review",
+          [ActionSequenceState.Completed]:
+            "Marked pull request as ready for review",
+          [ActionSequenceState.Failed]:
+            "Could not mark pull request as ready for review",
+        }),
+        action: async () => {
+          await git.markPullRequestAsReady()
+        },
+      })
+    }
+
+    if (shouldUndo) {
+      return sequencer
+    }
 
     sequencer.add({
       titles: ({ reviewers }) => ({
@@ -146,13 +194,17 @@ export default class Ready extends AuthCommand {
     return sequencer
   }
 
-  private async resolveReviewers(git: GitService) {
+  private async resolveReviewers(git: GitService, shouldUndo: boolean) {
+    if (shouldUndo) {
+      return []
+    }
+
     const teamMembers = await git.listTeamMembers()
 
     let reviewers: string[] = []
 
     if (teamMembers.length > 0) {
-      reviewers = await askChecklist(
+      reviewers = await chooseChecklist(
         "Who should review this pull request?",
         teamMembers,
       )
@@ -161,25 +213,47 @@ export default class Ready extends AuthCommand {
     return reviewers
   }
 
-  private async resolveTransition(
+  private async resolveIssueTransition(
     jira: JiraService,
     issue: Issue,
-  ): Promise<Transition> {
-    const transitions = await jira.listTransitions(issue.key)
+    shouldUndo: boolean,
+  ): Promise<IssueTransition> {
+    const { transitions } = await jira.client.issues.getTransitions({
+      issueIdOrKey: issue.key,
+    })
 
-    const readyForReviewStatus = this.config.saga.get("readyForReviewStatus")
+    if (!transitions) {
+      throw new Error("Could not fetch transitions")
+    }
 
-    let transition: Transition | null = null
+    const filteredTransitions = transitions.filter(
+      (transition) =>
+        transition.to?.statusCategory?.key === StatusCategory.InProgress,
+    )
 
-    if (readyForReviewStatus) {
+    const transitionStatus = shouldUndo
+      ? this.config.saga.get("workingStatus")
+      : this.config.saga.get("readyForReviewStatus")
+
+    let transition: IssueTransition | null = null
+
+    if (transitionStatus) {
       transition =
-        transitions.find(
-          (transition) => transition.name === readyForReviewStatus,
+        filteredTransitions.find(
+          (transition) => transition.name === transitionStatus,
         ) ?? null
     }
 
     if (!transition) {
-      transition = await askTransition(transitions)
+      this.log(
+        chalk.yellow("!"),
+        format(
+          "The issue status %s is no longer available for this issue.",
+          chalk.cyan(transitionStatus),
+        ),
+      )
+
+      transition = await chooseTransition(filteredTransitions)
     }
 
     return transition
@@ -199,7 +273,9 @@ export default class Ready extends AuthCommand {
     let issue: Issue | null = null
 
     if (issueKey) {
-      issue = await jira.findIssue(issueKey)
+      issue = await jira.client.issues.getIssue({
+        issueIdOrKey: issueKey,
+      })
     }
 
     if (!issue) {

@@ -1,50 +1,49 @@
 import { ExitError } from "@oclif/core/lib/errors/index.js"
 import chalk from "chalk"
 import doT from "dot"
+import {
+  Issue,
+  IssueTransition,
+  PageProject,
+} from "jira.js/out/version3/models/index.js"
 import { format } from "node:util"
 import { AuthCommand } from "../../AuthCommand.js"
 import { ActionSequenceState } from "../../actions/index.js"
 import { DraftPullRequestNotSupportedError } from "../../services/git/errors.js"
 import { FlagOptions, GitService } from "../../services/git/index.js"
+import { JiraService, StatusCategory } from "../../services/jira/index.js"
 import {
-  Issue,
-  JiraService,
-  StatusCategory,
-  Transition,
-} from "../../services/jira/index.js"
-import askIssue from "../../ux/prompts/askIssue.js"
-import chooseProject from "../../ux/prompts/chooseProject.js"
-import {
-  askAssignToMe,
-  askBaseBranch,
-  askBranch,
-  askCheckOutLinkedBranch,
-  askChoice,
-  askPrTitle,
-  askStartingPoint,
-  askTransition,
+  chooseAssignToMe,
+  chooseBaseBranch,
+  chooseBranch,
+  chooseChoice,
+  chooseIssue,
+  choosePrTitle,
+  chooseProject,
+  chooseStartingPoint,
+  chooseTransition,
 } from "../../ux/prompts/index.js"
 
 export default class Start extends AuthCommand {
-  static summary = "Start working on an issue"
+  static override summary = "Start working on an issue"
 
-  static args = {}
+  static override args = {}
 
-  static flags = {}
+  static override flags = {}
 
   async run() {
-    const jira = await this.initJiraService()
-    const git = await this.initGitService()
+    this.spinner.start()
+
+    const [jira, git] = await Promise.all([
+      this.initJiraService(),
+      this.initGitService(),
+    ])
 
     const projectKey = await this.resolveProjectKey(jira)
 
     const issue = await this.resolveIssue(jira, projectKey)
 
-    const linkedBranch = await jira.getLinkedBranch(issue.id)
-
-    if (linkedBranch) {
-      await this.handleIssueLinkedToBranch(git, linkedBranch)
-    }
+    await this.handleIssueLinkedToBranch(jira, issue)
 
     const shouldAssignToMe = await this.resolveShouldAssignToMe(
       issue,
@@ -53,9 +52,9 @@ export default class Start extends AuthCommand {
 
     const transition = await this.resolveInProgressTransition(jira, issue)
 
-    const branch = await this.resolveBranch(git, issue)
-
     const remote = await this.resolveRemote(git)
+
+    const branch = await this.resolveBranch(git, remote, issue)
 
     const baseBranches = await this.resolveBaseBranches(git)
 
@@ -109,10 +108,14 @@ export default class Start extends AuthCommand {
     })
     this.log()
 
-    await this.handleWhatsNext(git, issue)
+    await this.handleWhatsNext(jira, git, issue)
   }
 
-  private async handleWhatsNext(git: GitService, issue: Issue) {
+  private async handleWhatsNext(
+    jira: JiraService,
+    git: GitService,
+    issue: Issue,
+  ) {
     enum Choice {
       Skip = "Skip",
       OpenPullRequest = "Open pull request in browser",
@@ -120,23 +123,25 @@ export default class Start extends AuthCommand {
       OpenBoth = "Open issue and pull request in browser",
     }
 
-    const choice = await askChoice("What's next?", [
+    const choice = await chooseChoice("What's next?", [
       Choice.Skip,
       Choice.OpenPullRequest,
       Choice.OpenIssue,
       Choice.OpenBoth,
     ])
 
+    const issueUrl = jira.constructIssueUrl(issue)
+
     switch (choice) {
       case Choice.OpenPullRequest:
         this.open(await git.fetchPullRequestUrl())
         break
       case Choice.OpenIssue:
-        this.open(issue.url)
+        this.open(issueUrl)
         break
       case Choice.OpenBoth:
         this.open(await git.fetchPullRequestUrl())
-        this.open(issue.url)
+        this.open(issueUrl)
         break
     }
 
@@ -146,7 +151,7 @@ export default class Start extends AuthCommand {
   private getSequencer(jira: JiraService, git: GitService) {
     const sequencer = this.initActionSequencer<{
       issue: Issue
-      transition: Transition
+      transition: IssueTransition
       shouldAssignToMe: boolean
       remote: string
       branch: string
@@ -177,6 +182,8 @@ export default class Start extends AuthCommand {
 
         const currentBranch = await git.getCurrentBranch()
 
+        // const localBranch = branch.replace(`${remote}/`, "")
+
         if (currentBranch !== branch) {
           throw new Error(
             format(
@@ -187,7 +194,7 @@ export default class Start extends AuthCommand {
           )
         }
 
-        await git.push(["-u", remote, branch])
+        await git.push(["-f", "-u", remote, branch])
 
         const remoteBranch = await git.getRemoteBranch(branch)
         const expectedRemoteBranch = format("%s/%s", remote, branch)
@@ -227,8 +234,12 @@ export default class Start extends AuthCommand {
           sequence.skip("Skipped assigning issue")
         }
 
-        const currentUser = await jira.getCurrentUser()
-        await jira.assignIssue(issue.key, currentUser.accountId)
+        const user = await jira.client.myself.getCurrentUser()
+
+        await jira.client.issues.assignIssue({
+          issueIdOrKey: issue.key,
+          accountId: user.accountId,
+        })
       },
     })
 
@@ -262,7 +273,10 @@ export default class Start extends AuthCommand {
           )
         }
 
-        await jira.transitionIssue(issue.key, transition.id)
+        await jira.client.issues.doTransition({
+          issueIdOrKey: issue.key,
+          transition,
+        })
       },
     })
 
@@ -287,6 +301,17 @@ export default class Start extends AuthCommand {
         pullRequestTitle,
         pullRequestDescription,
       }) => {
+        const [remoteBranch, remoteBaseBranch] = await Promise.all([
+          git.getRemoteBranch(branch),
+          git.getRemoteBranch(baseBranch),
+        ])
+
+        if (remoteBranch === remoteBaseBranch) {
+          throw new Error(
+            "Cannot create a pull request from a branch to itself.",
+          )
+        }
+
         const hasCommitsBetween = Boolean(
           await git.diff([`${baseBranch}..${branch}`]),
         )
@@ -346,7 +371,7 @@ export default class Start extends AuthCommand {
 
     const defaultPullRequestTitle = templateFn({ issue, branch })
 
-    const pullRequestTitle = await askPrTitle(defaultPullRequestTitle)
+    const pullRequestTitle = await choosePrTitle(defaultPullRequestTitle)
     // TODO validate against pattern
 
     return pullRequestTitle
@@ -384,11 +409,17 @@ export default class Start extends AuthCommand {
 
     if (!askForStartingPoint) return defaultBranch
 
+    branches.sort((a, b) => {
+      if (a === defaultBranch) return -1
+      if (b === defaultBranch) return 1
+      return 0
+    })
+
     let startingPoint: string
 
     switch (true) {
       case branches.length > 1:
-        startingPoint = await askStartingPoint(branches)
+        startingPoint = await chooseStartingPoint(branches)
         break
       case branches.length === 1:
         startingPoint = branches[0]
@@ -416,7 +447,7 @@ export default class Start extends AuthCommand {
 
     switch (true) {
       case branches.length > 1:
-        branch = await askBaseBranch(branches)
+        branch = await chooseBaseBranch(branches)
         break
       case branches.length === 1:
         branch = branches[0]
@@ -440,17 +471,33 @@ export default class Start extends AuthCommand {
   }
 
   private async resolveBaseBranches(git: GitService) {
-    const [popularBaseBranches, remoteBranches] = await Promise.all([
-      git.listPopularBaseBranches(),
-      git.listRemoteBranches(),
-    ])
+    const [popularBaseBranches, remoteBranches, localBranches] =
+      await Promise.all([
+        git.listPopularBaseBranches(),
+        git.listRemoteBranches(),
+        git.listLocalBranches(),
+      ])
 
-    const baseBranches = [
-      ...new Set([...popularBaseBranches, ...remoteBranches]),
-    ].filter((branch) =>
-      remoteBranches.find((remoteBranch) =>
-        remoteBranch.endsWith(`/${branch}`),
-      ),
+    const filteredPopularBaseBranches = popularBaseBranches.filter(
+      (popularBaseBranch) => {
+        return remoteBranches.find((remoteBranch) =>
+          remoteBranch.includes(popularBaseBranch),
+        )
+      },
+    )
+
+    const filteredLocalBranches = localBranches.filter((localBranch) => {
+      return remoteBranches.find((remoteBranch) =>
+        remoteBranch.includes(localBranch),
+      )
+    })
+
+    const baseBranches = Array.from(
+      new Set([
+        ...filteredPopularBaseBranches,
+        ...filteredLocalBranches,
+        ...remoteBranches,
+      ]),
     )
 
     return baseBranches
@@ -460,7 +507,7 @@ export default class Start extends AuthCommand {
     const remotes = await git.listRemotes()
 
     if (remotes.length > 1) {
-      return await askChoice("Select a remote", remotes)
+      return await chooseChoice("Select a remote", remotes)
     } else if (remotes.length === 1) {
       return remotes[0]
     } else {
@@ -473,27 +520,55 @@ export default class Start extends AuthCommand {
     }
   }
 
-  private async resolveBranch(git: GitService, issue: Issue) {
+  private async resolveBranch(git: GitService, remote: string, issue: Issue) {
     const template = this.config.saga.get("branchNameTemplate")
 
     const templateFn = doT.template(template, { argName: ["issue"] })
 
-    const defaultBranchName = templateFn({ issue })
+    const defaultBranch = templateFn({ issue })
 
-    const branchName = await askBranch(defaultBranchName)
-    // TODO validate branch name
-    // TODO validate against pattern
-    // TODO check branch doesn't already exist
+    const branchNamePattern = new RegExp(
+      this.config.saga.get("branchNamePattern") ?? ".*",
+    )
 
-    return branchName
+    const branch = await chooseBranch(defaultBranch, async (input) => {
+      if (!branchNamePattern.test(input)) {
+        return "Branch name does not match pattern."
+      }
+
+      if (input.startsWith(remote)) {
+        return "Branch name should not start with the remote name."
+      }
+
+      const isBranchNameValid = await git.isBranchNameValid(input)
+
+      if (!isBranchNameValid) {
+        return "Branch name is invalid."
+      }
+
+      const remoteBranch = await git.getRemoteBranch(input).catch(() => null)
+      if (remoteBranch) {
+        return "Remote branch with same name already exists."
+      }
+
+      return true
+    })
+
+    return branch
   }
 
   private async resolveInProgressTransition(jira: JiraService, issue: Issue) {
-    const transitions = await jira.listTransitions(issue.key)
+    const { transitions } = await jira.client.issues.getTransitions({
+      issueIdOrKey: issue.key,
+    })
+
+    if (!transitions) {
+      throw new Error("Could not fetch transitions")
+    }
 
     const filteredTransitions = transitions.filter(
       (transition) =>
-        transition.to.statusCategory.key === StatusCategory.InProgress,
+        transition.to?.statusCategory?.key === StatusCategory.InProgress,
     )
 
     const workingStatus = this.config.saga.get("workingStatus")
@@ -508,36 +583,39 @@ export default class Start extends AuthCommand {
       this.log(
         chalk.yellow("!"),
         format(
-          "The working status %s is no longer available for this issue.",
+          "The issue status %s is no longer available for this issue.",
           chalk.cyan(workingStatus),
         ),
       )
     }
 
-    const transition = await askTransition(filteredTransitions)
+    const transition = await chooseTransition(filteredTransitions)
 
-    this.config.saga.set("workingStatus", transition.name)
+    if (transition.name) {
+      this.config.saga.set("workingStatus", transition.name)
+    }
 
     return transition
   }
 
   private async resolveShouldAssignToMe(issue: Issue, email: string) {
     if (issue.fields.assignee?.emailAddress !== email) {
-      return askAssignToMe(!issue.fields.assignee)
+      return chooseAssignToMe(!issue.fields.assignee)
     }
 
     return false
   }
 
-  private async handleIssueLinkedToBranch(
-    git: GitService,
-    linkedBranch: string,
-  ) {
-    const shouldCheckOutLinkedBranch = await askCheckOutLinkedBranch()
+  private async handleIssueLinkedToBranch(jira: JiraService, issue: Issue) {
+    const { detail } = await jira.getIssueDevStatus(issue)
 
-    if (shouldCheckOutLinkedBranch) {
-      await git.checkout([linkedBranch, "--track"])
-      throw new ExitError(0)
+    const linkedBranch = detail.at(0)?.branches.at(0)?.name
+
+    if (linkedBranch) {
+      this.log(
+        chalk.yellow("!"),
+        format("This issue is already linked to %s", chalk.cyan(linkedBranch)),
+      )
     }
   }
 
@@ -551,22 +629,59 @@ export default class Start extends AuthCommand {
 
     this.spinner.start()
 
-    const issues = await jira.findIssuesByJql(jql)
+    const issues = await jira.fetchAllPages<Issue>(async (startAt) => {
+      const searchResults =
+        await jira.client.issueSearch.searchForIssuesUsingJql({
+          maxResults: 100,
+          startAt,
+          jql,
+          fieldsByKeys: true,
+          fields: [
+            "summary",
+            "status",
+            "issuetype",
+            "parent",
+            "priority",
+            "assignee",
+          ],
+        })
+
+      if (
+        searchResults.maxResults === undefined ||
+        searchResults.startAt === undefined ||
+        searchResults.issues === undefined
+      ) {
+        throw new Error("Failed to fetch issues.")
+      }
+
+      return {
+        maxResults: searchResults.maxResults,
+        startAt: searchResults.startAt,
+        values: searchResults.issues,
+      }
+    })
 
     this.spinner.stop()
 
-    const issue = await askIssue(issues)
+    const issue = await chooseIssue(jira, issues)
 
     return issue
   }
 
-  private async resolveProjectKey(jira: JiraService) {
+  private async resolveProjectKey(jira: JiraService): Promise<string> {
     let projectKey = this.config.saga.get("project")
 
     if (!projectKey) {
       this.spinner.start()
 
-      const projects = await jira.listProjects()
+      const projects = await jira.fetchAllPages<PageProject["values"][number]>(
+        (startAt) => {
+          return jira.client.projects.searchProjects({
+            maxResults: 100,
+            startAt,
+          })
+        },
+      )
 
       this.spinner.stop()
 
