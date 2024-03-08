@@ -5,7 +5,7 @@ import { Issue, IssueTransition } from "jira.js/out/version3/models/index.js"
 import { format } from "node:util"
 import { AuthCommand } from "../../AuthCommand.js"
 import { ActionSequenceState } from "../../actions/index.js"
-import { GitService } from "../../services/git/index.js"
+import { GitService, errors } from "../../services/git/index.js"
 import { JiraService, StatusCategory } from "../../services/jira/index.js"
 import {
   chooseChecklist,
@@ -17,10 +17,6 @@ export default class Ready extends AuthCommand {
   static override summary = "Mark an issue as ready for review"
 
   static override flags = {
-    // reviewer: Flags.string({
-    //   char: "r",
-    //   description: "Reviewers to add to the pull request, separated by commas",
-    // }),
     undo: Flags.boolean({
       char: "u",
       description:
@@ -39,6 +35,8 @@ export default class Ready extends AuthCommand {
     ])
 
     const issue = await this.resolveIssue(jira, git)
+
+    await this.handlePullRequestExistance(git, issue)
 
     const shouldUndo = flags.undo
 
@@ -149,8 +147,21 @@ export default class Ready extends AuthCommand {
           [ActionSequenceState.Completed]: "Marked pull request as draft",
           [ActionSequenceState.Failed]: "Could not mark pull request as draft",
         }),
-        action: async () => {
-          await git.markPullRequestAsDraft()
+        action: async (_, sequence) => {
+          try {
+            await git.markPullRequestAsDraft()
+          } catch (error) {
+            if (error instanceof errors.DraftPullRequestNotSupportedError) {
+              sequence.skip(
+                format(
+                  "Skipped marking pull request as draft. %s",
+                  error.message,
+                ),
+              )
+            }
+
+            throw error
+          }
         },
       })
     } else {
@@ -218,9 +229,13 @@ export default class Ready extends AuthCommand {
     issue: Issue,
     shouldUndo: boolean,
   ): Promise<IssueTransition> {
+    this.spinner.start()
+
     const { transitions } = await jira.client.issues.getTransitions({
       issueIdOrKey: issue.key,
     })
+
+    this.spinner.stop()
 
     if (!transitions) {
       throw new Error("Could not fetch transitions")
@@ -254,9 +269,35 @@ export default class Ready extends AuthCommand {
       )
 
       transition = await chooseTransition(filteredTransitions)
+
+      if (!transition.name) {
+        throw new Error("Expected transition name to be defined")
+      }
+
+      if (shouldUndo) {
+        this.config.saga.set("workingStatus", transition.name)
+      } else {
+        this.config.saga.set("readyForReviewStatus", transition.name)
+      }
     }
 
     return transition
+  }
+
+  private async handlePullRequestExistance(git: GitService, issue: Issue) {
+    const openPullRequestExists = await git.openPullRequestExists()
+
+    if (!openPullRequestExists) {
+      this.log(
+        chalk.red("✗"),
+        format(
+          "Could not find an open pull request for issue %s",
+          chalk.cyan(issue.key),
+        ),
+      )
+
+      throw new ExitError(1)
+    }
   }
 
   private async resolveIssue(jira: JiraService, git: GitService) {

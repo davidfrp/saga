@@ -306,9 +306,13 @@ export default class Start extends AuthCommand {
           git.getRemoteBranch(baseBranch),
         ])
 
-        if (remoteBranch === remoteBaseBranch) {
+        if (
+          remoteBranch &&
+          remoteBaseBranch &&
+          remoteBranch === remoteBaseBranch
+        ) {
           throw new Error(
-            "Cannot create a pull request from a branch to itself.",
+            "Cannot create a pull request from a branch into itself.",
           )
         }
 
@@ -382,10 +386,10 @@ export default class Start extends AuthCommand {
     branch: string,
     baseBranch: string,
   ) {
-    const openPullRequestExists = await git.openPullRequestExists(
-      branch,
-      baseBranch,
-    )
+    const openPullRequestExists = await git.openPullRequestExists({
+      head: branch,
+      base: baseBranch,
+    })
 
     if (openPullRequestExists) {
       this.log(
@@ -536,7 +540,7 @@ export default class Start extends AuthCommand {
         return "Branch name does not match pattern."
       }
 
-      if (input.startsWith(remote)) {
+      if (input.startsWith(`${remote}/`)) {
         return "Branch name should not start with the remote name."
       }
 
@@ -546,8 +550,8 @@ export default class Start extends AuthCommand {
         return "Branch name is invalid."
       }
 
-      const remoteBranch = await git.getRemoteBranch(input).catch(() => null)
-      if (remoteBranch) {
+      const remoteBranch = await git.getRemoteBranch(input)
+      if (input === remoteBranch) {
         return "Remote branch with same name already exists."
       }
 
@@ -558,9 +562,13 @@ export default class Start extends AuthCommand {
   }
 
   private async resolveInProgressTransition(jira: JiraService, issue: Issue) {
+    this.spinner.start()
+
     const { transitions } = await jira.client.issues.getTransitions({
       issueIdOrKey: issue.key,
     })
+
+    this.spinner.stop()
 
     if (!transitions) {
       throw new Error("Could not fetch transitions")

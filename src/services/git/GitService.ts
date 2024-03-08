@@ -9,6 +9,11 @@ import {
   UncommittedChangesError,
 } from "./errors.js"
 
+export type OpenPullRequestExistsOptions = {
+  head?: string
+  base?: string
+}
+
 export type FlagOptions = (string | { [key: string]: boolean })[]
 
 export type GitServiceOptions = {
@@ -176,23 +181,33 @@ export class GitService {
     return stdout.trim()
   }
 
-  async openPullRequestExists(branch: string, baseBranch: string) {
-    const { stdout: json } = await this.exec(
-      `gh pr list --json baseRefName,headRefName,state`,
+  async openPullRequestExists(options?: OpenPullRequestExistsOptions) {
+    const { stderr, stdout } = await this.exec(
+      "gh pr view --json baseRefName,headRefName,state",
+      { throwOnError: false },
     )
 
-    const data = JSON.parse(json)
+    if (stderr) return false
 
-    const openPrExists = Boolean(
-      data.find(
-        (pr: { baseRefName: string; headRefName: string; state: string }) =>
-          pr.baseRefName === baseBranch &&
-          pr.headRefName === branch &&
-          pr.state === "OPEN",
-      ),
-    )
+    try {
+      const pullRequest = JSON.parse(stdout) as {
+        baseRefName: string
+        headRefName: string
+        state: string
+      }
 
-    return openPrExists
+      return (
+        (options?.base ? pullRequest.baseRefName === options.base : true) &&
+        (options?.head ? pullRequest.headRefName === options.head : true) &&
+        pullRequest.state === "OPEN"
+      )
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        return false
+      }
+
+      throw error
+    }
   }
 
   async fetchCurrentLogin() {
@@ -212,16 +227,21 @@ export class GitService {
       pullRequestDetailsResponse,
     )
 
-    const { stdout: teamMembersResponse } = await this.exec(
+    const { stdout } = await this.exec(
       `gh api /orgs/${headRepositoryOwner.login}/teams/${headRepository.name}/members`,
+      { throwOnError: false },
     )
 
-    const teamMembers = JSON.parse(teamMembersResponse) as
+    const teamMembers = JSON.parse(stdout) as
       | { login: string }[]
       | { message: string }
 
-    if ("message" in teamMembers || !Array.isArray(teamMembers)) {
-      throw new Error("Resource not found")
+    if ("message" in teamMembers && teamMembers.message === "Not Found") {
+      return []
+    }
+
+    if (!Array.isArray(teamMembers)) {
+      throw new Error("Could not fetch team members")
     }
 
     const myGitHubLogin = await this.fetchCurrentLogin()
@@ -298,9 +318,19 @@ export class GitService {
   }
 
   async getRemoteBranch(branch: string) {
-    const { stdout } = await this.exec(
+    const { stderr, stdout } = await this.exec(
       `git rev-parse --abbrev-ref ${branch}@{upstream}`,
+      { throwOnError: false },
     )
+
+    if (stderr) {
+      const remoteBranches = await this.listRemoteBranches()
+      if (remoteBranches.includes(branch)) {
+        return branch
+      }
+
+      return null
+    }
 
     return stdout.trim()
   }
@@ -339,7 +369,17 @@ export class GitService {
   }
 
   async markPullRequestAsDraft() {
-    await this.exec("gh pr ready --undo")
+    const { stderr } = await this.exec("gh pr ready --undo", {
+      throwOnError: false,
+    })
+
+    if (stderr.includes("convertPullRequestToDraft")) {
+      throw new DraftPullRequestNotSupportedError()
+    }
+
+    if (stderr) {
+      throw new Error(stderr)
+    }
   }
 
   async addReviewers(reviewers: string[]) {

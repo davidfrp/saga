@@ -28,6 +28,13 @@ export function ellipsize(
   }
 
   const uniquePlaceholderChar = "�"
+
+  if (value.includes(uniquePlaceholderChar)) {
+    throw new Error(
+      `Value may not contain the unique placeholder character "${uniquePlaceholderChar}"`,
+    )
+  }
+
   const ansiTemplate = value.replace(deansitize(value), uniquePlaceholderChar)
 
   const ellipsizedValue = deansitize(value).slice(0, maxWidth - ellipsis.length)

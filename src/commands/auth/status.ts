@@ -19,8 +19,6 @@ export default class Status extends AuthCommand {
       try {
         const currentUser = await jira.client.myself.getCurrentUser()
 
-        this.spinner.stop()
-
         this.log(
           chalk.green("✓"),
           format(
@@ -37,8 +35,6 @@ export default class Status extends AuthCommand {
         }
       }
     }
-
-    this.spinner.stop()
 
     this.log(
       chalk.red("✗"),
