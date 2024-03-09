@@ -1,4 +1,5 @@
 {
+  // "extends": ["oclif", "oclif-typescript", "prettier"]
   "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
@@ -12,9 +13,5 @@
     "@typescript-eslint/no-unsafe-assignment": "error",
     "@typescript-eslint/no-unsafe-member-access": "error",
     "@typescript-eslint/explicit-member-accessibility": "error"
-  },
-  "env": {
-    "browser": true,
-    "es2021": true
   }
 }

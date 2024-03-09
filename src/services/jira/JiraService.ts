@@ -1,46 +1,53 @@
-import { Config as JiraConfig, Version3Client as JiraClient } from "jira.js"
-import { Issue } from "jira.js/out/version3/models"
-import zod from "zod"
-import { JiraUnauthenticatedError } from "./errors.js"
+import {Version3Client as JiraClient, Config as JiraConfig} from 'jira.js'
+import {Issue} from 'jira.js/out/version3/models/index.js'
+import zod from 'zod'
+
+import {JiraUnauthenticatedError} from './errors.js'
 
 export type JiraServiceOptions = {
-  host: string
-  email: string
   apiToken: string
+  email: string
+  host: string
   middlewares?: JiraConfig.Middlewares
 }
 
 export class JiraService {
-  readonly #client: JiraClient
-  readonly #colorCache: { [key: string]: string } = {}
-
-  readonly host: string
   readonly email: string
 
+  readonly host: string
+
+  readonly #client: JiraClient
+
+  readonly #colorCache: {[key: string]: string} = {}
+
   constructor(options: JiraServiceOptions) {
-    const { host, email, apiToken, middlewares } = options
+    const {apiToken, email, host, middlewares} = options
 
     this.host = host
     this.email = email
 
     this.#client = new JiraClient({
-      host,
-      middlewares,
       authentication: {
         basic: {
-          email,
           apiToken,
+          email,
         },
       },
+      host,
+      middlewares,
     })
+  }
+
+  public get client() {
+    return this.#client
   }
 
   public fetchAllPages = async <T>(
     fetcher: (startAt: number) => Promise<{
-      startAt: number
-      maxResults: number
-      values: T[]
       isLast?: boolean
+      maxResults: number
+      startAt: number
+      values: T[]
     }>,
   ) => {
     const items: T[] = []
@@ -56,23 +63,39 @@ export class JiraService {
     return items
   }
 
-  isUnauthenticatedError(error: unknown): error is JiraUnauthenticatedError {
-    return (
-      error !== null &&
-      typeof error === "object" &&
-      "status" in error &&
-      error.status === 401
-    )
-  }
+  public getIssueDevStatus = async (issue: Issue) => {
+    const devStatusUrl = new URL(`/rest/dev-status/1.0/issue/detail`, this.host)
 
-  public extractIssueKey(projectKey: string, value: string) {
-    const keyPattern = new RegExp(`${projectKey}-\\d+`, "i")
-    const match = value.match(keyPattern)
-    return match ? match[0] : null
-  }
+    devStatusUrl.searchParams.append('issueId', issue.id)
+    devStatusUrl.searchParams.append('applicationType', 'GitHub')
+    devStatusUrl.searchParams.append('dataType', 'pullrequest')
 
-  public constructIssueUrl(issue: Issue) {
-    return `https://${this.host}/browse/${issue.key}`
+    const devStatusSchema = zod.object({
+      detail: zod.array(
+        zod.object({
+          branches: zod.array(
+            zod.object({
+              createPullRequestUrl: zod.string(),
+              name: zod.string(),
+              url: zod.string(),
+            }),
+          ),
+          pullRequests: zod.array(
+            zod.object({
+              name: zod.string(),
+              status: zod.string(),
+              url: zod.string(),
+            }),
+          ),
+        }),
+      ),
+    })
+
+    const response = await this.client.sendRequestFullResponse<zod.infer<typeof devStatusSchema>>({
+      url: devStatusUrl.toString(),
+    })
+
+    return devStatusSchema.parse(response.data)
   }
 
   public async colorFromSvg(svgUrl: string) {
@@ -82,7 +105,7 @@ export class JiraService {
 
     const response = await fetch(svgUrl)
     const svg = await response.text()
-    const color = svg.match(/fill="#([0-9a-f]{6})"/i)?.[1]
+    const color = svg.match(/fill="#([\da-f]{6})"/i)?.[1]
     const colorCode = color ? `#${color}` : undefined
 
     if (colorCode) {
@@ -92,42 +115,17 @@ export class JiraService {
     return colorCode
   }
 
-  public get client() {
-    return this.#client
+  public constructIssueUrl(issue: Issue) {
+    return `https://${this.host}/browse/${issue.key}`
   }
 
-  public getIssueDevStatus = async (issue: Issue) => {
-    const devStatusUrl = new URL(`/rest/dev-status/1.0/issue/detail`, this.host)
+  public extractIssueKey(projectKey: string, value: string) {
+    const keyPattern = new RegExp(`${projectKey}-\\d+`, 'i')
+    const match = value.match(keyPattern)
+    return match ? match[0] : null
+  }
 
-    devStatusUrl.searchParams.append("issueId", issue.id)
-    devStatusUrl.searchParams.append("applicationType", "GitHub")
-    devStatusUrl.searchParams.append("dataType", "pullrequest")
-
-    const devStatusSchema = zod.object({
-      detail: zod.array(
-        zod.object({
-          branches: zod.array(
-            zod.object({
-              name: zod.string(),
-              url: zod.string(),
-              createPullRequestUrl: zod.string(),
-            }),
-          ),
-          pullRequests: zod.array(
-            zod.object({
-              name: zod.string(),
-              url: zod.string(),
-              status: zod.string(),
-            }),
-          ),
-        }),
-      ),
-    })
-
-    const response = await this.client.sendRequestFullResponse<
-      zod.infer<typeof devStatusSchema>
-    >({ url: devStatusUrl.toString() })
-
-    return devStatusSchema.parse(response.data)
+  isUnauthenticatedError(error: unknown): error is JiraUnauthenticatedError {
+    return error !== null && typeof error === 'object' && 'status' in error && error.status === 401
   }
 }

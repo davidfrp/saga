@@ -1,22 +1,14 @@
-import { Command, Config } from "@oclif/core"
-import { ExitError } from "@oclif/core/lib/errors/index.js"
-import { CommandError } from "@oclif/core/lib/interfaces/index.js"
-import chalk from "chalk"
-import { exec } from "node:child_process"
-import { resolve } from "node:path"
-import { format } from "node:util"
-import ora, { Ora } from "ora"
-import { Logger } from "./Logger.js"
-import {
-  ActionSequenceState,
-  ActionSequencer,
-  ActionSequencerOptions,
-} from "./actions/index.js"
-import {
-  Configuration,
-  SecureConfiguration,
-  defineSchema,
-} from "./configuration/index.js"
+import {Command, Config} from '@oclif/core'
+import {ExitError} from '@oclif/core/lib/errors/index.js'
+import {CommandError} from '@oclif/core/lib/interfaces/index.js'
+import chalk from 'chalk'
+import {exec} from 'node:child_process'
+import {resolve} from 'node:path'
+import {format} from 'node:util'
+import ora, {Ora} from 'ora'
+import {Logger} from './Logger.js'
+import {ActionSequenceState, ActionSequencer, ActionSequencerOptions} from './actions/index.js'
+import {Configuration, SecureConfiguration, defineSchema} from './configuration/index.js'
 
 const schemaDefinition = defineSchema<{
   jiraHostname: string
@@ -35,67 +27,59 @@ const schemaDefinition = defineSchema<{
 
 const SAGA_CONFIG_SCHEMA = schemaDefinition({
   jiraHostname: {
-    description: "The hostname of your Jira instance.",
+    description: 'The hostname of your Jira instance.',
   },
   email: {
-    description: "The email address associated with your Atlassian account.",
+    description: 'The email address associated with your Atlassian account.',
   },
   project: {
-    description: "The default project to use when creating new issues.",
+    description: 'The default project to use when creating new issues.',
   },
   askForStartingPoint: {
-    description:
-      "Whether to use the same branch as both starting point and base branch.",
+    description: 'Whether to use the same branch as both starting point and base branch.',
     value: true,
   },
   workingStatus: {
-    description: "Status to transition to when starting work on an issue.",
-    value: "",
+    description: 'Status to transition to when starting work on an issue.',
+    value: '',
   },
   readyForReviewStatus: {
-    description:
-      "Status to transition to when marking an issue as ready for review.",
-    value: "",
+    description: 'Status to transition to when marking an issue as ready for review.',
+    value: '',
   },
   branchNameTemplate: {
-    description:
-      "Template used to generate default branch names. Uses the doT template engine.",
+    description: 'Template used to generate default branch names. Uses the doT template engine.',
     value:
       "feature/{{=issue.key}}-{{=issue.fields.summary.toLowerCase().replace(/[^\\s\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]/gi, '').trim().replace(/\\s+/g, '-')}}",
   },
   branchNamePattern: {
-    description:
-      "Pattern used to validate branch names. `new RegExp()` is used to parse the string.",
+    description: 'Pattern used to validate branch names. `new RegExp()` is used to parse the string.',
   },
   prTitleTemplate: {
-    description:
-      "Template used to generate default pull request titles. Uses the doT template engine.",
+    description: 'Template used to generate default pull request titles. Uses the doT template engine.',
     value:
       "feat: {{=issue.fields.summary.toLowerCase().replace(/[^'\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]+/gi, ' ').trim()}}",
   },
   prTitlePattern: {
-    description:
-      "Pattern for validating pull request titles. `new RegExp()` is used to parse the string.",
-    value: "",
+    description: 'Pattern for validating pull request titles. `new RegExp()` is used to parse the string.',
+    value: '',
   },
   prBodyTemplate: {
-    description:
-      "Template used to generate default pull request bodies. Uses the doT template engine.",
-    value: "[{{=issue.key}}]({{=issue.url}})",
+    description: 'Template used to generate default pull request bodies. Uses the doT template engine.',
+    value: '[{{=issue.key}}]({{=issue.url}})',
   },
   emptyCommitMessageTemplate: {
-    description:
-      "Template used to generate default empty commit messages. Uses the doT template engine.",
-    value: "chore: creating pull request",
+    description: 'Template used to generate default empty commit messages. Uses the doT template engine.',
+    value: 'chore: creating pull request',
   },
 })
 
-type SAGA_SECURE_CONFIG_ENTRIES = "atlassianApiToken"
+type SAGA_SECURE_CONFIG_ENTRIES = 'atlassianApiToken'
 
 export abstract class BaseCommand extends Command {
   protected readonly logger: Logger
 
-  readonly #spinner: Ora = ora({ spinner: "dots" })
+  readonly #spinner: Ora = ora({spinner: 'dots'})
 
   public declare config: Config & {
     saga: Configuration<typeof SAGA_CONFIG_SCHEMA> & {
@@ -106,15 +90,14 @@ export abstract class BaseCommand extends Command {
   public constructor(argv: string[], config: Config) {
     super(argv, config)
 
-    const sagaCrashLogPath = resolve(config.configDir, "crash.log")
-    const sagaConfigPath = resolve(config.configDir, "config.json")
+    const sagaCrashLogPath = resolve(config.configDir, 'crash.log')
+    const sagaConfigPath = resolve(config.configDir, 'config.json')
 
     this.logger = new Logger(sagaCrashLogPath)
 
-    this.config.saga = Object.assign(
-      new Configuration(sagaConfigPath, SAGA_CONFIG_SCHEMA),
-      { secure: new SecureConfiguration() },
-    )
+    this.config.saga = Object.assign(new Configuration(sagaConfigPath, SAGA_CONFIG_SCHEMA), {
+      secure: new SecureConfiguration(),
+    })
   }
 
   protected override async catch(error: CommandError) {
@@ -126,8 +109,8 @@ export abstract class BaseCommand extends Command {
     await this.logger.save()
 
     this.log(
-      `\n${chalk.yellow("!")} ${format(
-        "Something went wrong. A crash log has been generated.\n  %s",
+      `\n${chalk.yellow('!')} ${format(
+        'Something went wrong. A crash log has been generated.\n  %s',
         this.logger.path,
       )}\n`,
     )
@@ -143,12 +126,12 @@ export abstract class BaseCommand extends Command {
     return super.warn(input)
   }
 
-  public override error(input: string | Error, options?: { code?: string }) {
+  public override error(input: string | Error, options?: {code?: string}) {
     this.spinner.stop()
     return super.error(input, options)
   }
 
-  public override exit(code?: number | undefined): void {
+  public override exit(code?: number | undefined): never {
     this.spinner.stop()
     return super.exit(code)
   }
@@ -166,10 +149,10 @@ export abstract class BaseCommand extends Command {
     let command: string
 
     switch (process.platform) {
-      case "darwin":
+      case 'darwin':
         command = `open ${url}`
         break
-      case "win32":
+      case 'win32':
         command = `start ${url}`
         break
       default:
@@ -189,7 +172,7 @@ export abstract class BaseCommand extends Command {
       stop: () => {
         this.#spinner.stop()
       },
-      stopAndPersist: (options: { symbol: string; message?: string }) => {
+      stopAndPersist: (options: {symbol: string; message?: string}) => {
         this.#spinner.stopAndPersist({
           symbol: options.symbol,
           text: options.message,
@@ -197,19 +180,19 @@ export abstract class BaseCommand extends Command {
       },
       succeed: (message?: string) => {
         this.#spinner.stopAndPersist({
-          symbol: chalk.green("✓"),
+          symbol: chalk.green('✓'),
           text: message,
         })
       },
       fail: (message?: string) => {
         this.#spinner.stopAndPersist({
-          symbol: chalk.red("✗"),
+          symbol: chalk.red('✗'),
           text: message,
         })
       },
       warn: (message?: string) => {
         this.#spinner.stopAndPersist({
-          symbol: chalk.yellow("!"),
+          symbol: chalk.yellow('!'),
           text: message,
         })
       },
@@ -226,7 +209,7 @@ export abstract class BaseCommand extends Command {
               break
             case ActionSequenceState.Skipped:
               this.spinner.stopAndPersist({
-                symbol: chalk.yellow("↓"),
+                symbol: chalk.yellow('↓'),
                 message: title,
               })
               break
