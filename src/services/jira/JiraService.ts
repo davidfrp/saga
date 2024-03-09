@@ -1,4 +1,4 @@
-import { Version3Client as JiraClient } from "jira.js"
+import { Config as JiraConfig, Version3Client as JiraClient } from "jira.js"
 import { Issue } from "jira.js/out/version3/models"
 import zod from "zod"
 import { JiraUnauthenticatedError } from "./errors.js"
@@ -7,6 +7,7 @@ export type JiraServiceOptions = {
   host: string
   email: string
   apiToken: string
+  middlewares?: JiraConfig.Middlewares
 }
 
 export class JiraService {
@@ -17,13 +18,14 @@ export class JiraService {
   readonly email: string
 
   constructor(options: JiraServiceOptions) {
-    const { host, email, apiToken } = options
+    const { host, email, apiToken, middlewares } = options
 
     this.host = host
     this.email = email
 
     this.#client = new JiraClient({
       host,
+      middlewares,
       authentication: {
         basic: {
           email,

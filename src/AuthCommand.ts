@@ -23,6 +23,8 @@ export abstract class AuthCommand extends BaseCommand {
   }
 
   protected override async init() {
+    await super.init()
+
     const credentials = await this.getCredentials()
     const hasAllCredentials = this.checkHasAllCredentials(credentials)
 
@@ -78,6 +80,16 @@ export abstract class AuthCommand extends BaseCommand {
       throw new Error("Missing credentials")
     }
 
-    return new JiraService({ ...credentials })
+    return new JiraService({
+      ...credentials,
+      middlewares: {
+        onError: (error) => {
+          this.logger.log(JSON.stringify(error.toJSON()))
+        },
+        onResponse: (data) => {
+          console.log("data", data)
+        },
+      },
+    })
   }
 }
