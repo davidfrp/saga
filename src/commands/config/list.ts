@@ -21,7 +21,7 @@ export default class List extends BaseCommand {
           `${key}=${chalk.green(
             typeof value === "object"
               ? JSON.stringify(value)
-              : value.toString(),
+              : value?.toString() ?? "",
           )}`,
         )
       },

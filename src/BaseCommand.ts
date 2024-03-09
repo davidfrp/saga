@@ -6,26 +6,42 @@ import { exec } from "node:child_process"
 import { resolve } from "node:path"
 import { format } from "node:util"
 import ora, { Ora } from "ora"
-import { Configuration, createSchema } from "./Configuration.js"
 import { Logger } from "./Logger.js"
 import {
   ActionSequenceState,
   ActionSequencer,
   ActionSequencerOptions,
 } from "./actions/index.js"
+import {
+  Configuration,
+  SecureConfiguration,
+  defineSchema,
+} from "./configuration/index.js"
 
-const SAGA_CONFIG_SCHEMA = createSchema({
+const schemaDefinition = defineSchema<{
+  jiraHostname: string
+  email: string
+  project: string
+  askForStartingPoint: boolean
+  workingStatus: string
+  readyForReviewStatus: string
+  branchNameTemplate: string
+  branchNamePattern: string
+  prTitleTemplate: string
+  prTitlePattern: string
+  prBodyTemplate: string
+  emptyCommitMessageTemplate: string
+}>
+
+const SAGA_CONFIG_SCHEMA = schemaDefinition({
   jiraHostname: {
     description: "The hostname of your Jira instance.",
-    value: "",
   },
   email: {
     description: "The email address associated with your Atlassian account.",
-    value: "",
   },
   project: {
     description: "The default project to use when creating new issues.",
-    value: "",
   },
   askForStartingPoint: {
     description:
@@ -48,8 +64,8 @@ const SAGA_CONFIG_SCHEMA = createSchema({
       "feature/{{=issue.key}}-{{=issue.fields.summary.toLowerCase().replace(/[^\\s\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]/gi, '').trim().replace(/\\s+/g, '-')}}",
   },
   branchNamePattern: {
-    description: "Pattern used to validate branch names.",
-    value: "/.*/",
+    description:
+      "Pattern used to validate branch names. `new RegExp()` is used to parse the string.",
   },
   prTitleTemplate: {
     description:
@@ -58,7 +74,8 @@ const SAGA_CONFIG_SCHEMA = createSchema({
       "feat: {{=issue.fields.summary.toLowerCase().replace(/[^'\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]+/gi, ' ').trim()}}",
   },
   prTitlePattern: {
-    description: "Pattern used to validate pull request titles.",
+    description:
+      "Pattern for validating pull request titles. `new RegExp()` is used to parse the string.",
     value: "",
   },
   prBodyTemplate: {
@@ -71,12 +88,9 @@ const SAGA_CONFIG_SCHEMA = createSchema({
       "Template used to generate default empty commit messages. Uses the doT template engine.",
     value: "chore: creating pull request",
   },
-  atlassianApiToken: {
-    isSecret: true,
-    description: "The Atlassian API-token used to act on your behalf.",
-    value: "",
-  },
 })
+
+type SAGA_SECURE_CONFIG_ENTRIES = "atlassianApiToken"
 
 export abstract class BaseCommand extends Command {
   protected readonly logger: Logger
@@ -84,7 +98,9 @@ export abstract class BaseCommand extends Command {
   readonly #spinner: Ora = ora({ spinner: "dots" })
 
   public declare config: Config & {
-    saga: Configuration<typeof SAGA_CONFIG_SCHEMA>
+    saga: Configuration<typeof SAGA_CONFIG_SCHEMA> & {
+      secure: SecureConfiguration<SAGA_SECURE_CONFIG_ENTRIES>
+    }
   }
 
   public constructor(argv: string[], config: Config) {
@@ -95,9 +111,10 @@ export abstract class BaseCommand extends Command {
 
     this.logger = new Logger(sagaCrashLogPath)
 
-    const sagaConfig = new Configuration(sagaConfigPath, SAGA_CONFIG_SCHEMA)
-
-    this.config.saga = sagaConfig
+    this.config.saga = Object.assign(
+      new Configuration(sagaConfigPath, SAGA_CONFIG_SCHEMA),
+      { secure: new SecureConfiguration() },
+    )
   }
 
   protected override async catch(error: CommandError) {

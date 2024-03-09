@@ -349,7 +349,7 @@ export default class Start extends AuthCommand {
   }
 
   private getEmptyCommitMessage(issue: Issue, branch: string) {
-    const template = this.config.saga.get("emptyCommitMessageTemplate")
+    const template = this.config.saga.get("emptyCommitMessageTemplate") ?? ""
 
     const templateFn = doT.template(template, { argName: ["issue", "branch"] })
 
@@ -359,7 +359,7 @@ export default class Start extends AuthCommand {
   }
 
   private getPullRequestDescription(issue: Issue, branch: string) {
-    const template = this.config.saga.get("prBodyTemplate")
+    const template = this.config.saga.get("prBodyTemplate") ?? ""
 
     const templateFn = doT.template(template, { argName: ["issue", "branch"] })
 
@@ -369,7 +369,7 @@ export default class Start extends AuthCommand {
   }
 
   private async resolvePullRequestTitle(issue: Issue, branch: string) {
-    const template = this.config.saga.get("prTitleTemplate")
+    const template = this.config.saga.get("prTitleTemplate") ?? ""
 
     const templateFn = doT.template(template, { argName: ["issue", "branch"] })
 
@@ -525,14 +525,14 @@ export default class Start extends AuthCommand {
   }
 
   private async resolveBranch(git: GitService, remote: string, issue: Issue) {
-    const template = this.config.saga.get("branchNameTemplate")
+    const template = this.config.saga.get("branchNameTemplate") ?? ""
 
     const templateFn = doT.template(template, { argName: ["issue"] })
 
     const defaultBranch = templateFn({ issue })
 
     const branchNamePattern = new RegExp(
-      this.config.saga.get("branchNamePattern") ?? ".*",
+      this.config.saga.get("branchNamePattern") ?? "",
     )
 
     const branch = await chooseBranch(defaultBranch, async (input) => {

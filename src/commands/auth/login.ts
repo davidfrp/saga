@@ -8,6 +8,7 @@ import {
   chooseLoginAgain,
   chooseToken,
 } from "../../ux/prompts/index.js"
+import { JiraService } from "../../services/jira/index.js"
 
 export type Credentials = {
   email: string
@@ -16,14 +17,13 @@ export type Credentials = {
 }
 
 export default class Login extends AuthCommand {
-  protected override async checkHasAllCredentials() {
-    return true
-  }
-
   public override async run() {
-    let credentials = await this.getCredentials()
+    const jira = await this.initJiraService()
+
+    const credentials = await this.getCredentials()
 
     const shouldReauthenticate = await this.resolveShouldReauthenticate(
+      jira,
       credentials,
     )
 
@@ -31,24 +31,32 @@ export default class Login extends AuthCommand {
       throw new ExitError(0)
     }
 
-    credentials = await this.reauthenticate(credentials)
+    const { email, host, apiToken } = await this.resolveCredentials()
 
-    this.log()
+    await this.handleAuthentication({ email, host, apiToken })
+  }
+
+  private async handleAuthentication(credentials: Credentials) {
+    const { email, host, apiToken } = credentials
+
+    this.config.saga.set("email", email)
+    this.config.saga.set("jiraHostname", host)
+    await this.config.saga.secure.setSecret("atlassianApiToken", apiToken)
 
     const jira = await this.initJiraService()
 
-    try {
-      const currentUser = await jira.client.myself.getCurrentUser()
+    const currentUser = await jira.client.myself
+      .getCurrentUser()
+      .catch((error) => {
+        this.logger.log(
+          typeof error === "string"
+            ? error
+            : error.stack ?? error.message ?? JSON.stringify(error),
+        )
+        return null
+      })
 
-      this.log(
-        chalk.green("✓"),
-        format(
-          "You're logged in as %s (%s)\n",
-          chalk.cyan(currentUser.displayName),
-          chalk.cyan(currentUser.emailAddress),
-        ),
-      )
-    } catch (error) {
+    if (!currentUser) {
       this.log(
         chalk.red("✗"),
         format(
@@ -60,37 +68,55 @@ export default class Login extends AuthCommand {
       throw new ExitError(1)
     }
 
+    this.log(
+      chalk.green("✓"),
+      format(
+        "You're logged in as %s (%s)\n",
+        chalk.cyan(currentUser.displayName),
+        chalk.cyan(currentUser.emailAddress),
+      ),
+    )
+
     this.config.saga.set("project", "")
     this.config.saga.set("workingStatus", "")
     this.config.saga.set("readyForReviewStatus", "")
   }
 
-  private async reauthenticate(credentials: Credentials) {
-    let { email, host, apiToken } = credentials
-
-    email = await chooseEmail()
+  private async resolveCredentials(): Promise<Credentials> {
+    const email = await chooseEmail()
     this.config.saga.set("email", email)
 
-    host = await chooseHostname()
+    const host = await chooseHostname()
     this.config.saga.set("jiraHostname", host)
 
-    apiToken = await chooseToken()
-    await this.config.saga.setSecret("atlassianApiToken", apiToken)
+    const apiToken = await chooseToken()
+    await this.config.saga.secure.setSecret("atlassianApiToken", apiToken)
 
     return { email, host, apiToken }
   }
 
-  private async resolveShouldReauthenticate(credentials: Credentials) {
-    const { email, host, apiToken } = credentials
+  private async resolveShouldReauthenticate(
+    jira: JiraService,
+    credentials: Partial<Credentials>,
+  ) {
     let shouldReauthenticate = true
 
-    if (email && host && apiToken) {
-      try {
-        const jira = await this.initJiraService()
-        await jira.client.myself.getCurrentUser()
+    const hasAllCredentials = this.checkHasAllCredentials(credentials)
+
+    if (hasAllCredentials) {
+      const currentUser = await jira.client.myself
+        .getCurrentUser()
+        .catch((error) => {
+          this.logger.log(
+            typeof error === "string"
+              ? error
+              : error.stack ?? error.message ?? JSON.stringify(error),
+          )
+          return null
+        })
+
+      if (currentUser) {
         shouldReauthenticate = await chooseLoginAgain()
-      } catch (error) {
-        shouldReauthenticate = true
       }
     }
 

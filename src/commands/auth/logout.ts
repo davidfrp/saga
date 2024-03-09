@@ -1,7 +1,7 @@
 import chalk from "chalk"
-import { BaseCommand } from "../../BaseCommand.js"
+import { AuthCommand } from "../../AuthCommand.js"
 
-export default class Logout extends BaseCommand {
+export default class Logout extends AuthCommand {
   async run() {
     this.config.saga.set("project", "")
     this.config.saga.set("workingStatus", "")
@@ -9,7 +9,7 @@ export default class Logout extends BaseCommand {
     this.config.saga.set("email", "")
     this.config.saga.set("jiraHostname", "")
 
-    const successfullyRemovedToken = await this.config.saga.removeSecret(
+    const successfullyRemovedToken = await this.config.saga.secure.removeSecret(
       "atlassianApiToken",
     )
 

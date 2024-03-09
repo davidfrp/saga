@@ -1,7 +1,11 @@
 import { Flags } from "@oclif/core"
 import { ExitError } from "@oclif/core/lib/errors/index.js"
 import chalk from "chalk"
-import { Issue, IssueTransition } from "jira.js/out/version3/models/index.js"
+import {
+  Issue,
+  IssueTransition,
+  PageProject,
+} from "jira.js/out/version3/models/index.js"
 import { format } from "node:util"
 import { AuthCommand } from "../../AuthCommand.js"
 import { ActionSequenceState } from "../../actions/index.js"
@@ -10,6 +14,7 @@ import { JiraService, StatusCategory } from "../../services/jira/index.js"
 import {
   chooseChecklist,
   chooseChoice,
+  chooseProject,
   chooseTransition,
 } from "../../ux/prompts/index.js"
 
@@ -34,7 +39,9 @@ export default class Ready extends AuthCommand {
       this.initGitService(),
     ])
 
-    const issue = await this.resolveIssue(jira, git)
+    const projectKey = await this.resolveProjectKey(jira)
+
+    const issue = await this.resolveIssue(jira, git, projectKey)
 
     await this.handlePullRequestExistance(git, issue)
 
@@ -300,8 +307,11 @@ export default class Ready extends AuthCommand {
     }
   }
 
-  private async resolveIssue(jira: JiraService, git: GitService) {
-    const projectKey = this.config.saga.get("project")
+  private async resolveIssue(
+    jira: JiraService,
+    git: GitService,
+    projectKey: string,
+  ) {
     const currentBranch = await git.getCurrentBranch()
 
     let issueKey = jira.extractIssueKey(projectKey, currentBranch)
@@ -332,5 +342,49 @@ export default class Ready extends AuthCommand {
     }
 
     return issue
+  }
+
+  private async resolveProjectKey(jira: JiraService): Promise<string> {
+    let projectKey = this.config.saga.get("project")
+
+    if (!projectKey) {
+      this.spinner.start()
+
+      const projects = await jira.fetchAllPages<PageProject["values"][number]>(
+        (startAt) => {
+          return jira.client.projects.searchProjects({
+            maxResults: 100,
+            startAt,
+          })
+        },
+      )
+
+      this.spinner.stop()
+
+      if (projects.length === 0) {
+        this.log("No projects found.")
+        throw new ExitError(1)
+      }
+
+      if (projects.length === 1) {
+        const project = projects[0]
+        projectKey = project.key
+
+        this.log(
+          chalk.yellow("!"),
+          format(
+            "Using %s as project since there are no other projects to choose from.",
+            chalk.cyan(projectKey),
+          ),
+        )
+      } else {
+        const project = await chooseProject(projects)
+        projectKey = project.key
+      }
+    }
+
+    this.config.saga.set("project", projectKey)
+
+    return projectKey
   }
 }
