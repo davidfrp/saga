@@ -1,14 +1,14 @@
-import inquirer from "inquirer"
+import inquirer from "inquirer";
 
 function getUrl(value: string): URL | null {
   try {
-    return new URL(value)
+    return new URL(value);
   } catch (error) {
     if (!value.startsWith("https")) {
-      return getUrl(`https://${value}`)
+      return getUrl(`https://${value}`);
     }
 
-    return null
+    return null;
   }
 }
 
@@ -19,17 +19,17 @@ export const chooseHostname = async function (): Promise<string> {
     validate: (value: string) =>
       (getUrl(value) && !value.includes("@")) ||
       "You need to enter a valid Jira host name",
-  })
+  });
 
-  const url = getUrl(jiraHostname)
+  const url = getUrl(jiraHostname);
 
   if (!url) {
-    throw new Error("Invalid Jira host name")
+    throw new Error("Invalid Jira host name");
   }
 
   if (url.protocol !== "https:") {
-    throw new Error("Jira host name must use HTTPS")
+    throw new Error("Jira host name must use HTTPS");
   }
 
-  return url.origin
-}
+  return url.origin;
+};

@@ -1,7 +1,7 @@
-import inquirer from "inquirer"
+import inquirer from "inquirer";
 
 export const chooseChecklist = async function <
-  T extends Record<string, unknown> | string,
+  T extends Record<string, unknown> | string
 >(message: string, items: T[]): Promise<T[]> {
   const { item } = await inquirer.prompt([
     {
@@ -10,7 +10,7 @@ export const chooseChecklist = async function <
       message,
       choices: items,
     },
-  ])
+  ]);
 
-  return item
-}
+  return item;
+};

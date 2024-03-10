@@ -1,11 +1,11 @@
-import inquirer from "inquirer"
-import inquirerPrompt from "inquirer-autocomplete-prompt"
-import { createSourceFn, SourceFnOptions } from "../sourceFn.js"
+import inquirer from "inquirer";
+import inquirerPrompt from "inquirer-autocomplete-prompt";
+import { createSourceFn, SourceFnOptions } from "../sourceFn.js";
 
 export const chooseChoice = async function <
-  T extends Record<string, unknown> | string,
+  T extends Record<string, unknown> | string
 >(message: string, items: T[], options?: SourceFnOptions<T>): Promise<T> {
-  inquirer.registerPrompt("autocomplete", inquirerPrompt)
+  inquirer.registerPrompt("autocomplete", inquirerPrompt);
 
   const { item } = await inquirer.prompt([
     {
@@ -14,7 +14,7 @@ export const chooseChoice = async function <
       message,
       source: createSourceFn(items, options),
     },
-  ])
+  ]);
 
-  return item
-}
+  return item;
+};

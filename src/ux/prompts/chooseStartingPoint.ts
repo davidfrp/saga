@@ -1,11 +1,11 @@
-import inquirer from "inquirer"
-import inquirerPrompt from "inquirer-autocomplete-prompt"
-import { createSourceFn } from "../sourceFn.js"
+import inquirer from "inquirer";
+import inquirerPrompt from "inquirer-autocomplete-prompt";
+import { createSourceFn } from "../sourceFn.js";
 
 export const chooseStartingPoint = async function (
-  branches: string[],
+  branches: string[]
 ): Promise<string> {
-  inquirer.registerPrompt("autocomplete", inquirerPrompt)
+  inquirer.registerPrompt("autocomplete", inquirerPrompt);
 
   const { startingPoint } = await inquirer.prompt([
     {
@@ -14,7 +14,7 @@ export const chooseStartingPoint = async function (
       message: "Choose a starting point",
       source: createSourceFn(branches),
     },
-  ])
+  ]);
 
-  return startingPoint
-}
+  return startingPoint;
+};

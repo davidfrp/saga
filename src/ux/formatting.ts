@@ -1,4 +1,4 @@
-const ANSI_ESCAPE_CODE_REGEX = /\u001B\[(\d+)(;\d+)*m/g
+const ANSI_ESCAPE_CODE_REGEX = /\u001B\[(\d+)(;\d+)*m/g;
 
 /**
  * Removes ANSI escape codes from a string.
@@ -7,7 +7,7 @@ const ANSI_ESCAPE_CODE_REGEX = /\u001B\[(\d+)(;\d+)*m/g
  * @returns The string with ANSI escape codes removed.
  */
 export function deansitize(value: string): string {
-  return value.replace(ANSI_ESCAPE_CODE_REGEX, "")
+  return value.replace(ANSI_ESCAPE_CODE_REGEX, "");
 }
 
 /**
@@ -21,23 +21,28 @@ export function deansitize(value: string): string {
 export function ellipsize(
   value: string,
   maxWidth: number,
-  ellipsis = "...",
+  ellipsis = "..."
 ): string {
   if (deansitize(value).length <= maxWidth) {
-    return value
+    return value;
   }
 
-  const uniquePlaceholderChar = "�"
+  const uniquePlaceholderChar = "�";
 
   if (value.includes(uniquePlaceholderChar)) {
     throw new Error(
-      `Value may not contain the unique placeholder character "${uniquePlaceholderChar}"`,
-    )
+      `Value may not contain the unique placeholder character "${uniquePlaceholderChar}"`
+    );
   }
 
-  const ansiTemplate = value.replace(deansitize(value), uniquePlaceholderChar)
+  const ansiTemplate = value.replace(deansitize(value), uniquePlaceholderChar);
 
-  const ellipsizedValue = deansitize(value).slice(0, maxWidth - ellipsis.length)
+  const ellipsizedValue = deansitize(value).slice(
+    0,
+    maxWidth - ellipsis.length
+  );
 
-  return ansiTemplate.replace(uniquePlaceholderChar, ellipsizedValue) + ellipsis
+  return (
+    ansiTemplate.replace(uniquePlaceholderChar, ellipsizedValue) + ellipsis
+  );
 }

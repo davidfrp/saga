@@ -1,25 +1,25 @@
-import { Flags } from "@oclif/core"
-import { ExitError } from "@oclif/core/lib/errors/index.js"
-import chalk from "chalk"
+import { Flags } from "@oclif/core";
+import { ExitError } from "@oclif/core/lib/errors/index.js";
+import chalk from "chalk";
 import {
   Issue,
   IssueTransition,
   PageProject,
-} from "jira.js/out/version3/models/index.js"
-import { format } from "node:util"
-import { AuthCommand } from "../../AuthCommand.js"
-import { ActionSequenceState } from "../../actions/index.js"
-import { GitService, errors } from "../../services/git/index.js"
-import { JiraService, StatusCategory } from "../../services/jira/index.js"
+} from "jira.js/out/version3/models/index.js";
+import { format } from "node:util";
+import { AuthCommand } from "../../AuthCommand.js";
+import { ActionSequenceState } from "../../actions/index.js";
+import { GitService, errors } from "../../services/git/index.js";
+import { JiraService, StatusCategory } from "../../services/jira/index.js";
 import {
   chooseChecklist,
   chooseChoice,
   chooseProject,
   chooseTransition,
-} from "../../ux/prompts/index.js"
+} from "../../ux/prompts/index.js";
 
 export default class Ready extends AuthCommand {
-  static override summary = "Mark an issue as ready for review"
+  static override summary = "Mark an issue as ready for review";
 
   static override flags = {
     undo: Flags.boolean({
@@ -27,47 +27,47 @@ export default class Ready extends AuthCommand {
       description:
         "Mark the pull request as a draft and transition the issue to its working status",
     }),
-  }
+  };
 
   async run() {
-    const { flags } = await this.parse(Ready)
+    const { flags } = await this.parse(Ready);
 
-    this.spinner.start()
+    this.spinner.start();
 
     const [jira, git] = await Promise.all([
       this.initJiraService(),
       this.initGitService(),
-    ])
+    ]);
 
-    const projectKey = await this.resolveProjectKey(jira)
+    const projectKey = await this.resolveProjectKey(jira);
 
-    const issue = await this.resolveIssue(jira, git, projectKey)
+    const issue = await this.resolveIssue(jira, git, projectKey);
 
-    await this.handlePullRequestExistance(git, issue)
+    await this.handlePullRequestExistance(git, issue);
 
-    const shouldUndo = flags.undo
+    const shouldUndo = flags.undo;
 
     const transition = await this.resolveIssueTransition(
       jira,
       issue,
-      shouldUndo,
-    )
+      shouldUndo
+    );
 
-    const reviewers = await this.resolveReviewers(git, shouldUndo)
+    const reviewers = await this.resolveReviewers(git, shouldUndo);
 
-    const sequencer = this.getSequencer(jira, git, shouldUndo)
+    const sequencer = this.getSequencer(jira, git, shouldUndo);
 
-    this.log()
-    await sequencer.run({ issue, transition, reviewers })
-    this.log()
+    this.log();
+    await sequencer.run({ issue, transition, reviewers });
+    this.log();
 
-    await this.handleWhatsNext(jira, git, issue)
+    await this.handleWhatsNext(jira, git, issue);
   }
 
   private async handleWhatsNext(
     jira: JiraService,
     git: GitService,
-    issue: Issue,
+    issue: Issue
   ) {
     enum Choice {
       Skip = "Skip",
@@ -81,52 +81,52 @@ export default class Ready extends AuthCommand {
       Choice.OpenPullRequest,
       Choice.OpenIssue,
       Choice.OpenBoth,
-    ])
+    ]);
 
     switch (choice) {
       case Choice.OpenPullRequest:
-        this.open(await git.fetchPullRequestUrl())
-        break
+        this.open(await git.fetchPullRequestUrl());
+        break;
       case Choice.OpenIssue:
-        this.open(jira.constructIssueUrl(issue))
-        break
+        this.open(jira.constructIssueUrl(issue));
+        break;
       case Choice.OpenBoth:
-        this.open(await git.fetchPullRequestUrl())
-        this.open(jira.constructIssueUrl(issue))
-        break
+        this.open(await git.fetchPullRequestUrl());
+        this.open(jira.constructIssueUrl(issue));
+        break;
     }
 
-    this.log()
+    this.log();
   }
 
   private getSequencer(
     jira: JiraService,
     git: GitService,
-    shouldUndo: boolean,
+    shouldUndo: boolean
   ) {
     const sequencer = this.initActionSequencer<{
-      issue: Issue
-      transition: IssueTransition
-      reviewers: string[]
-    }>()
+      issue: Issue;
+      transition: IssueTransition;
+      reviewers: string[];
+    }>();
 
     sequencer.add({
       titles: ({ issue, transition }) => ({
         [ActionSequenceState.Running]: format(
           "Transitioning %s to %s",
           chalk.cyan(issue.key),
-          chalk.cyan(transition.name),
+          chalk.cyan(transition.name)
         ),
         [ActionSequenceState.Completed]: format(
           "Transitioned %s from %s to %s",
           chalk.cyan(issue.key),
           chalk.cyan(issue.fields.status.name),
-          chalk.cyan(transition.name),
+          chalk.cyan(transition.name)
         ),
         [ActionSequenceState.Failed]: format(
           "Could not transition %s to %s",
           chalk.cyan(issue.key),
-          chalk.cyan(transition.name),
+          chalk.cyan(transition.name)
         ),
       }),
       action: async ({ issue, transition }, sequence) => {
@@ -135,17 +135,17 @@ export default class Ready extends AuthCommand {
             format(
               "Skipped transition. %s is already in %s",
               chalk.cyan(issue.key),
-              chalk.cyan(transition.name),
-            ),
-          )
+              chalk.cyan(transition.name)
+            )
+          );
         }
 
         await jira.client.issues.doTransition({
           issueIdOrKey: issue.key,
           transition,
-        })
+        });
       },
-    })
+    });
 
     if (shouldUndo) {
       sequencer.add({
@@ -156,21 +156,21 @@ export default class Ready extends AuthCommand {
         }),
         action: async (_, sequence) => {
           try {
-            await git.markPullRequestAsDraft()
+            await git.markPullRequestAsDraft();
           } catch (error) {
             if (error instanceof errors.DraftPullRequestNotSupportedError) {
               sequence.skip(
                 format(
                   "Skipped marking pull request as draft. %s",
-                  error.message,
-                ),
-              )
+                  error.message
+                )
+              );
             }
 
-            throw error
+            throw error;
           }
         },
-      })
+      });
     } else {
       sequencer.add({
         titles: () => ({
@@ -182,13 +182,13 @@ export default class Ready extends AuthCommand {
             "Could not mark pull request as ready for review",
         }),
         action: async () => {
-          await git.markPullRequestAsReady()
+          await git.markPullRequestAsReady();
         },
-      })
+      });
     }
 
     if (shouldUndo) {
-      return sequencer
+      return sequencer;
     }
 
     sequencer.add({
@@ -196,74 +196,74 @@ export default class Ready extends AuthCommand {
         [ActionSequenceState.Running]: "Requesting reviewers for review",
         [ActionSequenceState.Completed]: format(
           "Requested %s for review",
-          chalk.cyan(reviewers.join(", ")),
+          chalk.cyan(reviewers.join(", "))
         ),
         [ActionSequenceState.Failed]: "Could not request reviewers for review",
       }),
       action: async ({ reviewers }, sequence) => {
         if (reviewers.length === 0) {
-          sequence.skip("No reviewers requested for review")
+          sequence.skip("No reviewers requested for review");
         }
 
-        await git.addReviewers(reviewers)
+        await git.addReviewers(reviewers);
       },
-    })
+    });
 
-    return sequencer
+    return sequencer;
   }
 
   private async resolveReviewers(git: GitService, shouldUndo: boolean) {
     if (shouldUndo) {
-      return []
+      return [];
     }
 
-    const teamMembers = await git.listTeamMembers()
+    const teamMembers = await git.listTeamMembers();
 
-    let reviewers: string[] = []
+    let reviewers: string[] = [];
 
     if (teamMembers.length > 0) {
       reviewers = await chooseChecklist(
         "Who should review this pull request?",
-        teamMembers,
-      )
+        teamMembers
+      );
     }
 
-    return reviewers
+    return reviewers;
   }
 
   private async resolveIssueTransition(
     jira: JiraService,
     issue: Issue,
-    shouldUndo: boolean,
+    shouldUndo: boolean
   ): Promise<IssueTransition> {
-    this.spinner.start()
+    this.spinner.start();
 
     const { transitions } = await jira.client.issues.getTransitions({
       issueIdOrKey: issue.key,
-    })
+    });
 
-    this.spinner.stop()
+    this.spinner.stop();
 
     if (!transitions) {
-      throw new Error("Could not fetch transitions")
+      throw new Error("Could not fetch transitions");
     }
 
     const filteredTransitions = transitions.filter(
       (transition) =>
-        transition.to?.statusCategory?.key === StatusCategory.InProgress,
-    )
+        transition.to?.statusCategory?.key === StatusCategory.InProgress
+    );
 
     const transitionStatus = shouldUndo
       ? this.config.saga.get("workingStatus")
-      : this.config.saga.get("readyForReviewStatus")
+      : this.config.saga.get("readyForReviewStatus");
 
-    let transition: IssueTransition | null = null
+    let transition: IssueTransition | null = null;
 
     if (transitionStatus) {
       transition =
         filteredTransitions.find(
-          (transition) => transition.name === transitionStatus,
-        ) ?? null
+          (transition) => transition.name === transitionStatus
+        ) ?? null;
     }
 
     if (!transition) {
@@ -271,62 +271,62 @@ export default class Ready extends AuthCommand {
         chalk.yellow("!"),
         format(
           "The issue status %s is no longer available for this issue.",
-          chalk.cyan(transitionStatus),
-        ),
-      )
+          chalk.cyan(transitionStatus)
+        )
+      );
 
-      transition = await chooseTransition(filteredTransitions)
+      transition = await chooseTransition(filteredTransitions);
 
       if (!transition.name) {
-        throw new Error("Expected transition name to be defined")
+        throw new Error("Expected transition name to be defined");
       }
 
       if (shouldUndo) {
-        this.config.saga.set("workingStatus", transition.name)
+        this.config.saga.set("workingStatus", transition.name);
       } else {
-        this.config.saga.set("readyForReviewStatus", transition.name)
+        this.config.saga.set("readyForReviewStatus", transition.name);
       }
     }
 
-    return transition
+    return transition;
   }
 
   private async handlePullRequestExistance(git: GitService, issue: Issue) {
-    const openPullRequestExists = await git.openPullRequestExists()
+    const openPullRequestExists = await git.openPullRequestExists();
 
     if (!openPullRequestExists) {
       this.log(
         chalk.red("✗"),
         format(
           "Could not find an open pull request for issue %s",
-          chalk.cyan(issue.key),
-        ),
-      )
+          chalk.cyan(issue.key)
+        )
+      );
 
-      throw new ExitError(1)
+      throw new ExitError(1);
     }
   }
 
   private async resolveIssue(
     jira: JiraService,
     git: GitService,
-    projectKey: string,
+    projectKey: string
   ) {
-    const currentBranch = await git.getCurrentBranch()
+    const currentBranch = await git.getCurrentBranch();
 
-    let issueKey = jira.extractIssueKey(projectKey, currentBranch)
+    let issueKey = jira.extractIssueKey(projectKey, currentBranch);
 
     if (!issueKey) {
-      const details = await git.fetchPullRequestDetails(currentBranch)
-      issueKey = details && jira.extractIssueKey(projectKey, details.body)
+      const details = await git.fetchPullRequestDetails(currentBranch);
+      issueKey = details && jira.extractIssueKey(projectKey, details.body);
     }
 
-    let issue: Issue | null = null
+    let issue: Issue | null = null;
 
     if (issueKey) {
       issue = await jira.client.issues.getIssue({
         issueIdOrKey: issueKey,
-      })
+      });
     }
 
     if (!issue) {
@@ -334,57 +334,57 @@ export default class Ready extends AuthCommand {
         chalk.red("✗"),
         format(
           "Could not find an issue for branch %s",
-          chalk.cyan(currentBranch),
-        ),
-      )
+          chalk.cyan(currentBranch)
+        )
+      );
 
-      throw new ExitError(1)
+      throw new ExitError(1);
     }
 
-    return issue
+    return issue;
   }
 
   private async resolveProjectKey(jira: JiraService): Promise<string> {
-    let projectKey = this.config.saga.get("project")
+    let projectKey = this.config.saga.get("project");
 
     if (!projectKey) {
-      this.spinner.start()
+      this.spinner.start();
 
       const projects = await jira.fetchAllPages<PageProject["values"][number]>(
         (startAt) => {
           return jira.client.projects.searchProjects({
             maxResults: 100,
             startAt,
-          })
-        },
-      )
+          });
+        }
+      );
 
-      this.spinner.stop()
+      this.spinner.stop();
 
       if (projects.length === 0) {
-        this.log("No projects found.")
-        throw new ExitError(1)
+        this.log("No projects found.");
+        throw new ExitError(1);
       }
 
       if (projects.length === 1) {
-        const project = projects[0]
-        projectKey = project.key
+        const project = projects[0];
+        projectKey = project.key;
 
         this.log(
           chalk.yellow("!"),
           format(
             "Using %s as project since there are no other projects to choose from.",
-            chalk.cyan(projectKey),
-          ),
-        )
+            chalk.cyan(projectKey)
+          )
+        );
       } else {
-        const project = await chooseProject(projects)
-        projectKey = project.key
+        const project = await chooseProject(projects);
+        projectKey = project.key;
       }
     }
 
-    this.config.saga.set("project", projectKey)
+    this.config.saga.set("project", projectKey);
 
-    return projectKey
+    return projectKey;
   }
 }

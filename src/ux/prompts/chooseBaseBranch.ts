@@ -1,11 +1,11 @@
-import inquirer from "inquirer"
-import inquirerPrompt from "inquirer-autocomplete-prompt"
-import { createSourceFn } from "../sourceFn.js"
+import inquirer from "inquirer";
+import inquirerPrompt from "inquirer-autocomplete-prompt";
+import { createSourceFn } from "../sourceFn.js";
 
 export const chooseBaseBranch = async function (
-  branches: string[],
+  branches: string[]
 ): Promise<string> {
-  inquirer.registerPrompt("autocomplete", inquirerPrompt)
+  inquirer.registerPrompt("autocomplete", inquirerPrompt);
 
   const { baseBranch } = await inquirer.prompt([
     {
@@ -14,7 +14,7 @@ export const chooseBaseBranch = async function (
       message: "Which branch should your pull request merge into?",
       source: createSourceFn(branches),
     },
-  ])
+  ]);
 
-  return baseBranch
-}
+  return baseBranch;
+};

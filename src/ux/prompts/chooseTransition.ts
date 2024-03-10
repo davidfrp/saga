@@ -1,12 +1,12 @@
-import inquirer from "inquirer"
-import inquirerPrompt from "inquirer-autocomplete-prompt"
-import type { IssueTransition } from "jira.js/out/version3/models/index.js"
-import { createSourceFn } from "../sourceFn.js"
+import inquirer from "inquirer";
+import inquirerPrompt from "inquirer-autocomplete-prompt";
+import type { IssueTransition } from "jira.js/out/version3/models/index.js";
+import { createSourceFn } from "../sourceFn.js";
 
 export const chooseTransition = async function (
-  transitions: IssueTransition[],
+  transitions: IssueTransition[]
 ): Promise<IssueTransition> {
-  inquirer.registerPrompt("autocomplete", inquirerPrompt)
+  inquirer.registerPrompt("autocomplete", inquirerPrompt);
 
   const { transition } = await inquirer.prompt([
     {
@@ -21,7 +21,7 @@ export const chooseTransition = async function (
         ],
       }),
     },
-  ])
+  ]);
 
-  return transition
-}
+  return transition;
+};

@@ -1,2 +1,2 @@
-export * from "./GitService.js"
-export * as errors from "./errors.js"
+export * from "./GitService.js";
+export * as errors from "./errors.js";

@@ -1,4 +1,4 @@
-import inquirer from "inquirer"
+import inquirer from "inquirer";
 
 export const chooseLoginAgain = async function (): Promise<boolean> {
   const { shouldLoginAgain } = await inquirer.prompt([
@@ -8,7 +8,7 @@ export const chooseLoginAgain = async function (): Promise<boolean> {
       message: "You're already logged in. Do you want to re-authenticate?",
       default: false,
     },
-  ])
+  ]);
 
-  return shouldLoginAgain
-}
+  return shouldLoginAgain;
+};

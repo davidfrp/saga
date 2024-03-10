@@ -1,7 +1,7 @@
-import inquirer from "inquirer"
+import inquirer from "inquirer";
 
 export const chooseAssignToMe = async function (
-  isUnassigned: boolean,
+  isUnassigned: boolean
 ): Promise<boolean> {
   const { askAssignToMe } = await inquirer.prompt([
     {
@@ -12,7 +12,7 @@ export const chooseAssignToMe = async function (
         : "This issue is already assigned. Do you want to assign it to yourself?",
       default: true,
     },
-  ])
+  ]);
 
-  return askAssignToMe
-}
+  return askAssignToMe;
+};

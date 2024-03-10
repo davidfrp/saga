@@ -1,29 +1,29 @@
-import chalk from "chalk"
-import inquirer from "inquirer"
-import inquirerPrompt from "inquirer-autocomplete-prompt"
-import { Issue } from "jira.js/out/version3/models/issue.js"
-import { JiraService } from "../../services/jira/index.js"
-import { createSourceFn } from "../sourceFn.js"
+import chalk from "chalk";
+import inquirer from "inquirer";
+import inquirerPrompt from "inquirer-autocomplete-prompt";
+import { Issue } from "jira.js/out/version3/models/issue.js";
+import { JiraService } from "../../services/jira/index.js";
+import { createSourceFn } from "../sourceFn.js";
 
 export const chooseIssue = async function (
   jira: JiraService,
-  issues: Issue[],
+  issues: Issue[]
 ): Promise<Issue> {
-  inquirer.registerPrompt("autocomplete", inquirerPrompt)
+  inquirer.registerPrompt("autocomplete", inquirerPrompt);
 
   const issueTypeColors = await issues.reduce<
     Promise<Record<string, string | undefined>>
   >(async (issueTypeColors, issue) => {
-    const colors = await issueTypeColors
+    const colors = await issueTypeColors;
 
     if (issue.fields.issuetype?.iconUrl) {
       colors[issue.key] = await jira.colorFromSvg(
-        issue.fields.issuetype.iconUrl,
-      )
+        issue.fields.issuetype.iconUrl
+      );
     }
 
-    return colors
-  }, Promise.resolve({}))
+    return colors;
+  }, Promise.resolve({}));
 
   const { issue } = await inquirer.prompt([
     {
@@ -36,14 +36,14 @@ export const chooseIssue = async function (
             issue.fields.issuetype?.name,
             issue.fields.parent?.fields.summary,
             issue.fields.parent?.key,
-          ]
+          ];
 
-          return meta.filter(Boolean).join(" ")
+          return meta.filter(Boolean).join(" ");
         },
         columns: [
           {
             value: (issue) => {
-              return chalk.hex(issueTypeColors[issue.key] ?? "")(issue.key)
+              return chalk.hex(issueTypeColors[issue.key] ?? "")(issue.key);
             },
           },
           {
@@ -58,7 +58,7 @@ export const chooseIssue = async function (
               return (
                 issue.fields.assignee?.emailAddress?.split("@")[0] ??
                 chalk.dim("None")
-              )
+              );
             },
             maxWidth: 8,
           },
@@ -69,7 +69,7 @@ export const chooseIssue = async function (
         ],
       }),
     },
-  ])
+  ]);
 
-  return issue
-}
+  return issue;
+};

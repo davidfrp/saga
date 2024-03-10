@@ -1,7 +1,7 @@
 {
-  "name": "saga",
-  "version": "0.0.0",
-  "description": "oclif example Hello World CLI (ESM)",
+  "name": "@davidfrp/saga",
+  "version": "3.0.0",
+  "description": "Eases the flow of work for developers.",
   "keywords": [
     "oclif"
   ],
@@ -9,7 +9,7 @@
   "bugs": "https://github.com/davidfrp/saga/issues",
   "repository": "davidfrp/saga",
   "license": "MIT",
-  "author": "David Petersen @davidfrp",
+  "author": "@davidfrp",
   "type": "module",
   "exports": "./lib/index.js",
   "main": "",
@@ -21,6 +21,8 @@
     "/oclif.manifest.json"
   ],
   "scripts": {
+    "start": "node ./bin/run.js",
+    "dev": "nodemon -e js,ts --watch src --exec \"yarn build\"",
     "build": "shx rm -rf dist && tsc -b",
     "lint": "eslint . --ext .ts",
     "prepack": "yarn build && oclif manifest && oclif readme",
@@ -39,10 +41,10 @@
       "@oclif/plugin-plugins"
     ],
     "topicSeparator": " ",
-    "topics": {
-      "hello": {
-        "description": "Say hello to the world and others"
-      }
+    "hooks": {
+      "init": [
+        "./dist/hooks/init/checkForUpdates.js"
+      ]
     }
   },
   "dependencies": {
@@ -61,7 +63,6 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@oclif/prettier-config": "^0.2.1",
     "@oclif/test": "^3",
     "@types/chai": "^4",
     "@types/inquirer": "^9.0.7",
@@ -73,10 +74,9 @@
     "@typescript-eslint/parser": "^7.1.1",
     "chai": "^4",
     "eslint": "^8",
-    "eslint-config-oclif": "^5",
-    "eslint-config-oclif-typescript": "^3",
     "eslint-config-prettier": "^9.1.0",
     "mocha": "^10",
+    "nodemon": "^3.1.0",
     "oclif": "^4.4.19",
     "shx": "^0.3.4",
     "ts-node": "^10.9.2",

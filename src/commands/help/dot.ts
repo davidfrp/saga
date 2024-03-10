@@ -1,7 +1,7 @@
-import { BaseCommand } from "../../BaseCommand.js"
+import { BaseCommand } from "../../BaseCommand.js";
 
 export default class Dot extends BaseCommand {
-  static override aliases: string[] = ["help:dotjs", "help:dot.js", "help:doT"]
+  static override aliases: string[] = ["help:dotjs", "help:dot.js", "help:doT"];
 
   async run() {
     this
@@ -35,6 +35,6 @@ EXAMPLE USAGE
   "{{= issue.fields.summary.toLowerCase().replace(/\\s/g, "-") }}" will output "improve-template-engine-documentation-within-cli"
 
 
-To learn more about doT.js and its syntax, see: https://github.com/olado/doT`)
+To learn more about doT.js and its syntax, see: https://github.com/olado/doT`);
   }
 }
