@@ -233,11 +233,23 @@ export default class Start extends AuthCommand {
         ),
       }),
       action: async ({ shouldAssignToMe, issue }, sequence) => {
-        if (!shouldAssignToMe) {
-          sequence.skip("Skipped assigning issue");
+        const user = await jira.client.myself.getCurrentUser();
+
+        if (issue.fields.assignee?.accountId === user.accountId) {
+          sequence.skip(
+            format(
+              "Skipped assigning issue. %s is already assigned to %s",
+              issue.key,
+              jira.email
+            )
+          );
         }
 
-        const user = await jira.client.myself.getCurrentUser();
+        if (!shouldAssignToMe) {
+          sequence.skip(
+            "Skipped assigning issue. You chose not to assign yourself."
+          );
+        }
 
         await jira.client.issues.assignIssue({
           issueIdOrKey: issue.key,
@@ -320,7 +332,7 @@ export default class Start extends AuthCommand {
         }
 
         const hasCommitsBetween = Boolean(
-          await git.diff([`${baseBranch}..${branch}`])
+          await git.diff([`${baseBranch}..${branch}`, "| head -n 1"])
         );
 
         if (!hasCommitsBetween) {
