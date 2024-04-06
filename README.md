@@ -1,43 +1,49 @@
-Saga er et CLI-værktøj der sigter efter at aflaste udviklere ved at automatisere de mest hyppige interaktioner man har mellem Jira, GitHub og Git.
+<div align="center">
+<h1>Saga</h1>
 
-Målet er at man som udvikler ikke behøver at skulle forlade sit IDE, når man vil starte eller afslutte arbejde på en opgave.
+A high-level CLI tool for developers juggling between [Jira], [Git], and [GitHub].
 
-<!-- ![screen capture of saga issue start]() -->
+![NPM Version][npm_version_badge]
 
-## Saga
+</div>
 
-- Erstatter hverken Jira, GitHub eller Git.
-- Prioriterer enkelte og dybdegående kommandoer, fremfor mange og afgrænsede kommandoer.
-- Kan tilpasses forskellige teams. Ikke alle teams arbejder ens, og det bør der tages højde for.
-- Forebygger indtastningsfejl (fx ved copy-paste af sagers titler) i navning af branches og PRs.
+## **📑 Overview**
 
-## Installér Saga
+Saga is a CLI tool designed to streamline your development workflow by automating the most frequent interactions with Jira, Git, and GitHub.
 
-<!--
-### Via Homebrew (MacOS)
+The goal is to enable developers to initiate and complete tasks without needing to leave their IDE.
 
-[Installér Homebrew](https://brew.sh/) og kør:
+Saga serves as a high-level abstraction, replicating the most common actions a developer would typically perform. It's not meant to replace Jira, Git, or GitHub, but rather to complement them. Any low- to medium-level operations should still be performed directly in the respective tools/platforms.
 
-```sh-session
-$ brew tap davidfrp/saga && brew install saga
-``` -->
+By automating the most tedious aspects of the development process, Saga speeds up your workflow while also minimizes the risk of human error.
 
-### Via npm (MacOS, Linux, Windows)
+## **📦 Installation**
 
-<!-- Saga er bygget med Node.js og kan installeres via npm. Du skal allerede have node og npm installeret.
-Vær opmærksom på, at du via denne installationsmetode benytter dit systems version af Node.js, som kan være en anden version end den, som Saga er bygget med.
-
-Denne metode kan være nyttig, hvis du vil have fin kontrol over CLI-opdateringer, f.eks. i et testet script. -->
+### **Via npm (MacOS, Linux, Windows)**
 
 ```sh-session
 npm i -g @davidfrp/saga
 ```
 
-## Konfiguration
+<!-- ### **Via Homebrew (MacOS)**
 
-Saga opbevarer sine konfigurationer i `~/.config/saga/config.json` (på Mac og Linux) eller `C:\Users\<username>\.config\saga\config.json` (på Windows).
+```sh-session
+brew tap davidfrp/saga && brew install saga
+``` -->
 
-For at konfigurere Saga, skal du enten redigere din config.json direkte, eller bruge kommandoen `saga config` til at opdatere eller læse konfigurationen.
+## **🚀 Getting Started**
+
+To get started, you can run the `saga` command in your terminal. This will guide you through the setup process.
+
+```sh-session
+saga
+```
+
+## **🔩 Configuration**
+
+Saga stores its configurations in `~/.config/saga/config.json` (on Mac and Linux) or `C:\Users\<username>\.config\saga\config.json` (on Windows).
+
+To configure Saga, you can either edit your `config.json` directly or use the `saga config` command to update or read the configuration.
 
 ```sh-session
 saga config list
@@ -45,12 +51,21 @@ saga config set <key> <value>
 saga config get <key>
 ```
 
-### Hovednøglering
+## **Commands**
 
-Nogle oplysninger er særligt sårbare og gemmes derfor ikke i konfigurationen. For eksempel gemmes din Atlassian API-nøgle i dit systems hovednøglering (keychain). Dette er med til at sikre at du ikke ved en fejl kommer til at dele særligt sårbare oplysninger med andre.
+Here are some of the commands you can use with Saga:
 
-Hvis du vil fjerne alle dine loginoplysninger kan du logge ud med:
+- `saga issue start`: Start working on an issue.
+- `saga issue ready`: Mark an issue as ready for review.
 
-```sh-session
-saga auth logout
-```
+<!-- Badges -->
+
+[npm_version_badge]: https://img.shields.io/npm/v/%40davidfrp%2Fsaga
+
+<!-- Links -->
+
+[jira]: https://www.atlassian.com/software/jira
+[git]: https://git-scm.com/
+[github]: https://github.com/
+[nodejs]: https://nodejs.org/
+[homebrew]: https://brew.sh/
