@@ -61,7 +61,7 @@ const SAGA_CONFIG_SCHEMA = schemaDefinition({
     description:
       "Template used to generate default branch names. Uses the doT template engine.",
     value:
-      "feature/{{=issue.key}}-{{=issue.fields.summary.toLowerCase().replace(/[^\\s\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]/gi, '').trim().replace(/\\s+/g, '-')}}",
+      "{{= issue ? `feature/${issue.key}-${issue.fields.summary.toLowerCase().replace(/[^\\s\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]/gi, '').trim().replace(/\\s+/g, '-')}` : ''}}",
   },
   branchNamePattern: {
     description:
@@ -71,7 +71,7 @@ const SAGA_CONFIG_SCHEMA = schemaDefinition({
     description:
       "Template used to generate default pull request titles. Uses the doT template engine.",
     value:
-      "feat: {{=issue.fields.summary.toLowerCase().replace(/[^'\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]+/gi, ' ').trim()}}",
+      "{{= issue ? `feat: ${issue.fields.summary.toLowerCase().replace(/[^'\\w\\u00C0-\\u024F\\u1E00-\\u1EFF]+/gi, ' ').trim()}` : ''}}",
   },
   prTitlePattern: {
     description:
@@ -81,7 +81,8 @@ const SAGA_CONFIG_SCHEMA = schemaDefinition({
   prBodyTemplate: {
     description:
       "Template used to generate default pull request bodies. Uses the doT template engine.",
-    value: "[{{=issue.key}}]({{=issue.url}})",
+    value:
+      "{{= issue ? `[${issue.key}](https://${jiraHostname}/browse/${issue.key})` : ''}}",
   },
   emptyCommitMessageTemplate: {
     description:

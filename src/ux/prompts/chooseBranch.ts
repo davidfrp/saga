@@ -9,7 +9,7 @@ export const chooseBranch = async function (
       type: "input",
       name: "branchName",
       message: "Enter a branch name",
-      default: defaultValue,
+      default: defaultValue ? defaultValue : undefined,
       validate: validationFn,
     },
   ]);

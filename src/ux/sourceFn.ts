@@ -3,9 +3,9 @@ import { deansitize, ellipsize } from "./formatting.js";
 import fuzzysort from "fuzzysort";
 
 export type Row<T> = {
-  meta: string;
   name: string;
   value: T;
+  meta?: string;
 };
 
 export type SourceFn<T> = (
@@ -45,6 +45,11 @@ export type SourceFnOptions<T> = {
   columnSpacing?: number;
 
   /**
+   * Text to display for select no item.
+   */
+  selectNoneText?: string;
+
+  /**
    * Provides a string which can be matched against when searching.
    * Could be useful for when wanting to search for a value which is not
    * displayed in any of the columns.
@@ -57,10 +62,25 @@ export function createSourceFn<T extends object | string>(
   items: T[],
   options?: SourceFnOptions<T>
 ) {
-  const sourceFn: SourceFn<T> = (_, input) => {
-    const rows = createRows(items, options);
-    const filteredRows = filterRows(rows, input);
-    return [...filteredRows, new inquirer.Separator()];
+  const sourceFn: SourceFn<T | null> = (_, input) => {
+    const itemRows = createRows(items, options);
+    const filteredItemRows = filterRows(itemRows, input);
+
+    const rows: (Row<T | null> | inquirer.Separator)[] = [
+      ...filteredItemRows,
+      new inquirer.Separator(),
+    ];
+
+    if (!options?.selectNoneText) return rows;
+
+    if (input && filteredItemRows.length) return rows;
+
+    rows.unshift({
+      name: options.selectNoneText,
+      value: null,
+    });
+
+    return rows;
   };
 
   return sourceFn;

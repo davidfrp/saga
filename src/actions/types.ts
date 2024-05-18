@@ -28,6 +28,9 @@ export type ActionSequence<TContext> = {
   /** Action to perform the sequence. */
   action: Action<TContext>;
 
+  /** Predicate to determine if the sequence should be ignored entirely. */
+  ignoreWhen?: (context: TContext) => boolean;
+
   /** Action to rollback the changes performed. */
   rollback?: Action<TContext>;
 };

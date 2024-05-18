@@ -8,7 +8,7 @@ import { createSourceFn } from "../sourceFn.js";
 export const chooseIssue = async function (
   jira: JiraService,
   issues: Issue[]
-): Promise<Issue> {
+): Promise<Issue | null> {
   inquirer.registerPrompt("autocomplete", inquirerPrompt);
 
   const issueTypeColors = await issues.reduce<
@@ -31,15 +31,9 @@ export const chooseIssue = async function (
       name: "issue",
       message: "Select an issue",
       source: createSourceFn(issues, {
-        meta: (issue) => {
-          const meta = [
-            issue.fields.issuetype?.name,
-            issue.fields.parent?.fields.summary,
-            issue.fields.parent?.key,
-          ];
-
-          return meta.filter(Boolean).join(" ");
-        },
+        selectNoneText: chalk.dim(
+          "Select no issue. Start work unrelated to an issue."
+        ),
         columns: [
           {
             value: (issue) => {
@@ -67,6 +61,15 @@ export const chooseIssue = async function (
             maxWidth: 50,
           },
         ],
+        meta: (issue) => {
+          const meta = [
+            issue.fields.issuetype?.name,
+            issue.fields.parent?.fields.summary,
+            issue.fields.parent?.key,
+          ];
+
+          return meta.filter(Boolean).join(" ");
+        },
       }),
     },
   ]);

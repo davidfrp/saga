@@ -7,16 +7,16 @@ import {
   PageProject,
 } from "jira.js/out/version3/models/index.js";
 import { format } from "node:util";
-import { AuthCommand } from "../../AuthCommand.js";
-import { ActionSequenceState } from "../../actions/index.js";
-import { GitService, errors } from "../../services/git/index.js";
-import { JiraService, StatusCategory } from "../../services/jira/index.js";
+import { AuthCommand } from "../AuthCommand.js";
+import { ActionSequenceState } from "../actions/index.js";
+import { GitService, errors } from "../services/git/index.js";
+import { JiraService, StatusCategory } from "../services/jira/index.js";
 import {
   chooseChecklist,
   chooseChoice,
   chooseProject,
   chooseTransition,
-} from "../../ux/prompts/index.js";
+} from "../ux/prompts/index.js";
 
 export default class Ready extends AuthCommand {
   static override summary = "Mark an issue as ready for review";

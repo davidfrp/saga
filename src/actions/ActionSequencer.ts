@@ -50,6 +50,12 @@ export class ActionSequencer<TContext> {
     for (const sequence of this.#sequences) {
       const titles = sequence.titles(context);
 
+      const shouldIgnore = sequence.ignoreWhen?.(context);
+
+      if (shouldIgnore) {
+        continue;
+      }
+
       try {
         this.#renderer.render(ActionSequenceState.Running, titles.running);
 

@@ -7,11 +7,11 @@ import {
   PageProject,
 } from "jira.js/out/version3/models/index.js";
 import { format } from "node:util";
-import { AuthCommand } from "../../AuthCommand.js";
-import { ActionSequenceState } from "../../actions/index.js";
-import { DraftPullRequestNotSupportedError } from "../../services/git/errors.js";
-import { FlagOptions, GitService } from "../../services/git/index.js";
-import { JiraService, StatusCategory } from "../../services/jira/index.js";
+import { AuthCommand } from "../AuthCommand.js";
+import { ActionSequenceState } from "../actions/index.js";
+import { DraftPullRequestNotSupportedError } from "../services/git/errors.js";
+import { FlagOptions, GitService } from "../services/git/index.js";
+import { JiraService, StatusCategory } from "../services/jira/index.js";
 import {
   chooseAssignToMe,
   chooseBaseBranch,
@@ -22,10 +22,10 @@ import {
   chooseProject,
   chooseStartingPoint,
   chooseTransition,
-} from "../../ux/prompts/index.js";
+} from "../ux/prompts/index.js";
 
-export default class Start extends AuthCommand {
-  static override summary = "Start working on an issue";
+export default class Begin extends AuthCommand {
+  static override summary = "Begin work on an issue";
 
   static override args = {};
 
@@ -117,7 +117,7 @@ export default class Start extends AuthCommand {
   private async handleWhatsNext(
     jira: JiraService,
     git: GitService,
-    issue: Issue
+    issue: Issue | null
   ) {
     enum Choice {
       Skip = "Skip",
@@ -126,24 +126,28 @@ export default class Start extends AuthCommand {
       OpenBoth = "Open issue and pull request in browser",
     }
 
-    const choice = await chooseChoice("What's next?", [
-      Choice.Skip,
-      Choice.OpenPullRequest,
-      Choice.OpenIssue,
-      Choice.OpenBoth,
-    ]);
+    const choices = [Choice.Skip, Choice.OpenPullRequest];
 
-    const issueUrl = jira.constructIssueUrl(issue);
+    if (issue) {
+      choices.push(Choice.OpenIssue);
+      choices.push(Choice.OpenBoth);
+    }
+
+    const choice = await chooseChoice("What's next?", choices);
+
+    const issueUrl = issue && jira.constructIssueUrl(issue);
 
     switch (choice) {
       case Choice.OpenPullRequest:
         this.open(await git.fetchPullRequestUrl());
         break;
       case Choice.OpenIssue:
+        if (!issueUrl) throw new Error("Issue URL is not available.");
         this.open(issueUrl);
         break;
       case Choice.OpenBoth:
         this.open(await git.fetchPullRequestUrl());
+        if (!issueUrl) throw new Error("Issue URL is not available.");
         this.open(issueUrl);
         break;
     }
@@ -153,9 +157,9 @@ export default class Start extends AuthCommand {
 
   private getSequencer(jira: JiraService, git: GitService) {
     const sequencer = this.initActionSequencer<{
-      issue: Issue;
-      transition: IssueTransition;
-      shouldAssignToMe: boolean;
+      issue: Issue | null;
+      transition: IssueTransition | null;
+      shouldAssignToMe: boolean | null;
       remote: string;
       branch: string;
       startingPoint: string;
@@ -181,11 +185,13 @@ export default class Start extends AuthCommand {
         ),
       }),
       action: async ({ branch, startingPoint, remote }) => {
+        // TODO distribute through Homebrew.
+        // TODO add custom lifecycles, e.g. running linting before readying a PR.
+        // FIXME ensure startingPoint is up-to-date.
+
         await git.checkout(["-B", branch, startingPoint]);
 
         const currentBranch = await git.getCurrentBranch();
-
-        // const localBranch = branch.replace(`${remote}/`, "")
 
         if (currentBranch !== branch) {
           throw new Error(
@@ -219,28 +225,31 @@ export default class Start extends AuthCommand {
         [ActionSequenceState.Running]: format(
           "Assigning %s to %s",
           chalk.cyan(jira.email),
-          chalk.cyan(issue.key)
+          chalk.cyan(issue!.key)
         ),
         [ActionSequenceState.Completed]: format(
           "Assigned %s to %s",
           chalk.cyan(jira.email),
-          chalk.cyan(issue.key)
+          chalk.cyan(issue!.key)
         ),
         [ActionSequenceState.Failed]: format(
           "Could not assign %s to %s",
           chalk.cyan(jira.email),
-          chalk.cyan(issue.key)
+          chalk.cyan(issue!.key)
         ),
       }),
+      ignoreWhen({ issue }) {
+        return !issue;
+      },
       action: async ({ shouldAssignToMe, issue }, sequence) => {
         const user = await jira.client.myself.getCurrentUser();
 
-        if (issue.fields.assignee?.accountId === user.accountId) {
+        if (issue!.fields.assignee?.accountId === user.accountId) {
           sequence.skip(
             format(
               "Skipped assigning issue. %s is already assigned to %s",
-              issue.key,
-              jira.email
+              chalk.cyan(issue!.key),
+              chalk.cyan(jira.email)
             )
           );
         }
@@ -252,7 +261,7 @@ export default class Start extends AuthCommand {
         }
 
         await jira.client.issues.assignIssue({
-          issueIdOrKey: issue.key,
+          issueIdOrKey: issue!.key,
           accountId: user.accountId,
         });
       },
@@ -262,35 +271,38 @@ export default class Start extends AuthCommand {
       titles: ({ issue, transition }) => ({
         [ActionSequenceState.Running]: format(
           "Transitioning %s to %s",
-          chalk.cyan(issue.key),
-          chalk.cyan(transition.name)
+          chalk.cyan(issue!.key),
+          chalk.cyan(transition!.name)
         ),
         [ActionSequenceState.Completed]: format(
           "Transitioned %s from %s to %s",
-          chalk.cyan(issue.key),
-          chalk.cyan(issue.fields.status.name),
-          chalk.cyan(transition.name)
+          chalk.cyan(issue!.key),
+          chalk.cyan(issue!.fields.status.name),
+          chalk.cyan(transition!.name)
         ),
         [ActionSequenceState.Failed]: format(
           "Could not transition %s to %s",
-          chalk.cyan(issue.key),
-          chalk.cyan(transition.name)
+          chalk.cyan(issue!.key),
+          chalk.cyan(transition!.name)
         ),
       }),
+      ignoreWhen({ transition }) {
+        return !transition;
+      },
       action: async ({ issue, transition }, sequence) => {
-        if (issue.fields.status.name === transition.name) {
+        if (issue!.fields.status.name === transition!.name) {
           sequence.skip(
             format(
               "Skipped transition. %s is already in %s",
-              chalk.cyan(issue.key),
-              chalk.cyan(transition.name)
+              chalk.cyan(issue!.key),
+              chalk.cyan(transition!.name)
             )
           );
         }
 
         await jira.client.issues.doTransition({
-          issueIdOrKey: issue.key,
-          transition,
+          issueIdOrKey: issue!.key,
+          transition: transition!,
         });
       },
     });
@@ -302,7 +314,7 @@ export default class Start extends AuthCommand {
           chalk.cyan(branch),
           chalk.cyan(baseBranch)
         ),
-        [ActionSequenceState.Completed]: "Created pull request",
+        [ActionSequenceState.Completed]: "Created pull request", // TODO include link or pr number
         [ActionSequenceState.Failed]: format(
           "Could not create pull request for %s into %s",
           chalk.cyan(branch),
@@ -366,32 +378,50 @@ export default class Start extends AuthCommand {
     return sequencer;
   }
 
-  private getEmptyCommitMessage(issue: Issue, branch: string) {
+  private getEmptyCommitMessage(issue: Issue | null, branch: string) {
     const template = this.config.saga.get("emptyCommitMessageTemplate") ?? "";
 
-    const templateFn = doT.template(template, { argName: ["issue", "branch"] });
+    const templateFn = doT.template(template, {
+      argName: ["jiraHostname", "issue", "branch"],
+    });
 
-    const emptyCommitMessage = templateFn({ issue, branch });
+    const emptyCommitMessage = templateFn({
+      jiraHostname: this.config.saga.get("jiraHostname"),
+      issue,
+      branch,
+    });
 
     return emptyCommitMessage;
   }
 
-  private getPullRequestDescription(issue: Issue, branch: string) {
+  private getPullRequestDescription(issue: Issue | null, branch: string) {
     const template = this.config.saga.get("prBodyTemplate") ?? "";
 
-    const templateFn = doT.template(template, { argName: ["issue", "branch"] });
+    const templateFn = doT.template(template, {
+      argName: ["jiraHostname", "issue", "branch"],
+    });
 
-    const pullRequestDescription = templateFn({ issue, branch });
+    const pullRequestDescription = templateFn({
+      jiraHostname: this.config.saga.get("jiraHostname"),
+      issue,
+      branch,
+    });
 
     return pullRequestDescription;
   }
 
-  private async resolvePullRequestTitle(issue: Issue, branch: string) {
+  private async resolvePullRequestTitle(issue: Issue | null, branch: string) {
     const template = this.config.saga.get("prTitleTemplate") ?? "";
 
-    const templateFn = doT.template(template, { argName: ["issue", "branch"] });
+    const templateFn = doT.template(template, {
+      argName: ["jiraHostname", "issue", "branch"],
+    });
 
-    const defaultPullRequestTitle = templateFn({ issue, branch });
+    const defaultPullRequestTitle = templateFn({
+      jiraHostname: this.config.saga.get("jiraHostname"),
+      issue,
+      branch,
+    });
 
     const pullRequestTitle = await choosePrTitle(defaultPullRequestTitle);
     // TODO validate against pattern
@@ -542,12 +572,21 @@ export default class Start extends AuthCommand {
     }
   }
 
-  private async resolveBranch(git: GitService, remote: string, issue: Issue) {
+  private async resolveBranch(
+    git: GitService,
+    remote: string,
+    issue: Issue | null
+  ) {
     const template = this.config.saga.get("branchNameTemplate") ?? "";
 
-    const templateFn = doT.template(template, { argName: ["issue"] });
+    const templateFn = doT.template(template, {
+      argName: ["jiraHostname", "issue"],
+    });
 
-    const defaultBranch = templateFn({ issue });
+    const defaultBranch = templateFn({
+      jiraHostname: this.config.saga.get("jiraHostname"),
+      issue,
+    });
 
     const branchNamePattern = new RegExp(
       this.config.saga.get("branchNamePattern") ?? ""
@@ -579,7 +618,12 @@ export default class Start extends AuthCommand {
     return branch;
   }
 
-  private async resolveInProgressTransition(jira: JiraService, issue: Issue) {
+  private async resolveInProgressTransition(
+    jira: JiraService,
+    issue: Issue | null
+  ) {
+    if (!issue) return null;
+
     this.spinner.start();
 
     const { transitions } = await jira.client.issues.getTransitions({
@@ -624,7 +668,9 @@ export default class Start extends AuthCommand {
     return transition;
   }
 
-  private async resolveShouldAssignToMe(issue: Issue, email: string) {
+  private async resolveShouldAssignToMe(issue: Issue | null, email: string) {
+    if (!issue) return null;
+
     if (issue.fields.assignee?.emailAddress !== email) {
       return chooseAssignToMe(!issue.fields.assignee);
     }
@@ -632,7 +678,12 @@ export default class Start extends AuthCommand {
     return false;
   }
 
-  private async handleIssueLinkedToBranch(jira: JiraService, issue: Issue) {
+  private async handleIssueLinkedToBranch(
+    jira: JiraService,
+    issue: Issue | null
+  ) {
+    if (!issue) return;
+
     const { detail } = await jira.getIssueDevStatus(issue);
 
     const linkedBranch = detail.at(0)?.branches.at(0)?.name;

@@ -7,7 +7,7 @@ export const choosePrTitle = async function (
   const { pullRequestTitle } = await inquirer.prompt({
     name: "pullRequestTitle",
     message: "Pull request title",
-    default: defaultValue,
+    default: defaultValue ? defaultValue : undefined,
     validate: validationFn,
   });
 

@@ -6,11 +6,6 @@ export default class List extends BaseCommand {
   static override aliases: string[] = ["config:ls"];
 
   async run() {
-    this.log(
-      chalk.yellow("!"),
-      format("You can edit these values in the %s file.", this.config.saga.path)
-    );
-
     Object.entries(this.config.saga.schema).map(
       ([key, { description, value }]) => {
         this.log(chalk.dim(description));
@@ -22,6 +17,11 @@ export default class List extends BaseCommand {
           )}`
         );
       }
+    );
+
+    this.log(
+      chalk.yellow("!"),
+      format("You can edit these values in the %s file.", this.config.saga.path)
     );
   }
 }

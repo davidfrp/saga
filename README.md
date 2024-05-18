@@ -55,8 +55,8 @@ saga config get <key>
 
 Here are some of the commands you can use with Saga:
 
-- `saga issue start`: Start working on an issue.
-- `saga issue ready`: Mark an issue as ready for review.
+- `saga begin`: Begin work on an issue.
+- `saga ready`: Mark an issue as ready for review.
 
 <!-- Badges -->
 
