@@ -187,9 +187,18 @@ export default class Begin extends AuthCommand {
       action: async ({ branch, startingPoint, remote }) => {
         // TODO distribute through Homebrew.
         // TODO add custom lifecycles, e.g. running linting before readying a PR.
-        // FIXME ensure startingPoint is up-to-date.
 
-        await git.checkout(["-B", branch, startingPoint]);
+        await git.fetch();
+
+        const remoteStartingPoint = await git.getRemoteBranch(startingPoint);
+
+        console.log({ startingPoint, remoteStartingPoint, branch, remote });
+
+        await git.checkout([
+          "-B",
+          branch,
+          remoteStartingPoint ?? startingPoint,
+        ]);
 
         const currentBranch = await git.getCurrentBranch();
 

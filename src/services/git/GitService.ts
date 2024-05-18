@@ -412,6 +412,10 @@ export class GitService {
     await this.exec(`git checkout ${this.getFlags(options)}`);
   }
 
+  async fetch(options?: FlagOptions) {
+    await this.exec(`git fetch ${this.getFlags(options)}`);
+  }
+
   async branch(options: FlagOptions) {
     await this.exec(`git branch ${this.getFlags(options)}`);
   }
