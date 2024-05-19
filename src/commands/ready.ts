@@ -41,17 +41,15 @@ export default class Ready extends AuthCommand {
 
     const projectKey = await this.resolveProjectKey(jira);
 
-    const issue = await this.resolveIssue(jira, git, projectKey);
+    await this.handlePullRequestExistance(git);
 
-    await this.handlePullRequestExistance(git, issue);
+    const issue = await this.resolveIssue(jira, git, projectKey);
 
     const shouldUndo = flags.undo;
 
-    const transition = await this.resolveIssueTransition(
-      jira,
-      issue,
-      shouldUndo
-    );
+    const transition = issue
+      ? await this.resolveIssueTransition(jira, shouldUndo, issue)
+      : undefined;
 
     const reviewers = await this.resolveReviewers(git, shouldUndo);
 
@@ -78,7 +76,7 @@ export default class Ready extends AuthCommand {
   private async handleWhatsNext(
     jira: JiraService,
     git: GitService,
-    issue: Issue
+    issue?: Issue
   ) {
     enum Choice {
       Skip = "Skip",
@@ -87,25 +85,33 @@ export default class Ready extends AuthCommand {
       OpenBoth = "Open issue and pull request in browser",
     }
 
-    const choice = await chooseChoice("What's next?", [
-      Choice.Skip,
-      Choice.OpenPullRequest,
-      Choice.OpenIssue,
-      Choice.OpenBoth,
-    ]);
+    const choices = [Choice.Skip, Choice.OpenPullRequest];
+
+    if (issue) {
+      choices.push(Choice.OpenIssue);
+      choices.push(Choice.OpenBoth);
+    }
+
+    const choice = await chooseChoice("What's next?", choices);
+
+    const issueUrl = issue && jira.constructIssueUrl(issue);
 
     switch (choice) {
       case Choice.OpenPullRequest:
         this.open(await git.fetchPullRequestUrl());
         break;
       case Choice.OpenIssue:
-        this.open(jira.constructIssueUrl(issue));
+        if (!issueUrl) throw new Error("Issue URL is not available.");
+        this.open(issueUrl);
         break;
       case Choice.OpenBoth:
         this.open(await git.fetchPullRequestUrl());
-        this.open(jira.constructIssueUrl(issue));
+        if (!issueUrl) throw new Error("Issue URL is not available.");
+        this.open(issueUrl);
         break;
     }
+
+    this.log();
   }
 
   private getSequencer(
@@ -114,8 +120,8 @@ export default class Ready extends AuthCommand {
     shouldUndo: boolean
   ) {
     const sequencer = this.initActionSequencer<{
-      issue: Issue;
-      transition: IssueTransition;
+      issue?: Issue;
+      transition?: IssueTransition;
       reviewers: string[];
     }>();
 
@@ -123,34 +129,37 @@ export default class Ready extends AuthCommand {
       titles: ({ issue, transition }) => ({
         [ActionSequenceState.Running]: format(
           "Transitioning %s to %s",
-          chalk.cyan(issue.key),
-          chalk.cyan(transition.name)
+          chalk.cyan(issue!.key),
+          chalk.cyan(transition!.name)
         ),
         [ActionSequenceState.Completed]: format(
           "Transitioned %s from %s to %s",
-          chalk.cyan(issue.key),
-          chalk.cyan(issue.fields.status.name),
-          chalk.cyan(transition.name)
+          chalk.cyan(issue!.key),
+          chalk.cyan(issue!.fields.status.name),
+          chalk.cyan(transition!.name)
         ),
         [ActionSequenceState.Failed]: format(
           "Could not transition %s to %s",
-          chalk.cyan(issue.key),
-          chalk.cyan(transition.name)
+          chalk.cyan(issue!.key),
+          chalk.cyan(transition!.name)
         ),
       }),
+      ignoreWhen: ({ issue, transition }) => {
+        return !issue || !transition;
+      },
       action: async ({ issue, transition }, sequence) => {
-        if (issue.fields.status.name === transition.name) {
+        if (issue!.fields.status.name === transition!.name) {
           sequence.skip(
             format(
               "Skipped transition. %s is already in %s",
-              chalk.cyan(issue.key),
-              chalk.cyan(transition.name)
+              chalk.cyan(issue!.key),
+              chalk.cyan(transition!.name)
             )
           );
         }
 
         await jira.client.issues.doTransition({
-          issueIdOrKey: issue.key,
+          issueIdOrKey: issue!.key,
           transition,
         });
       },
@@ -242,8 +251,8 @@ export default class Ready extends AuthCommand {
 
   private async resolveIssueTransition(
     jira: JiraService,
-    issue: Issue,
-    shouldUndo: boolean
+    shouldUndo: boolean,
+    issue: Issue
   ): Promise<IssueTransition> {
     this.spinner.start();
 
@@ -300,16 +309,13 @@ export default class Ready extends AuthCommand {
     return transition;
   }
 
-  private async handlePullRequestExistance(git: GitService, issue: Issue) {
+  private async handlePullRequestExistance(git: GitService) {
     const openPullRequestExists = await git.openPullRequestExists();
 
     if (!openPullRequestExists) {
       this.log(
         chalk.red("✗"),
-        format(
-          "Could not find an open pull request for issue %s",
-          chalk.cyan(issue.key)
-        )
+        "Could not find an open pull request for the current branch"
       );
 
       throw new ExitError(1);
@@ -338,19 +344,7 @@ export default class Ready extends AuthCommand {
       });
     }
 
-    if (!issue) {
-      this.log(
-        chalk.red("✗"),
-        format(
-          "Could not find an issue for branch %s",
-          chalk.cyan(currentBranch)
-        )
-      );
-
-      throw new ExitError(1);
-    }
-
-    return issue;
+    return issue ?? undefined;
   }
 
   private async resolveProjectKey(jira: JiraService): Promise<string> {

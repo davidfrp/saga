@@ -385,6 +385,10 @@ export default class Begin extends AuthCommand {
       argName: ["jiraHostname", "issue", "branch"],
     });
 
+    // FIXME issue.url
+    // FIXME hostname include https://
+    // FIXME remove hostname
+
     const emptyCommitMessage = templateFn({
       jiraHostname: this.config.saga.get("jiraHostname"),
       issue,
