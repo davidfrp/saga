@@ -2,7 +2,7 @@ export * from "./auth/index.js";
 export * from "./chooseAssignToMe.js";
 export * from "./chooseBaseBranch.js";
 export * from "./chooseBranch.js";
-export * from "./chooseChecklist.js";
+export * from "./chooseCheckbox.js";
 export * from "./chooseChoice.js";
 export * from "./chooseIssue.js";
 export * from "./choosePrTitle.js";

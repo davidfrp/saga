@@ -1,15 +1,12 @@
-import inquirer from "inquirer";
+import { input } from "@inquirer/prompts";
 
-export const choosePrTitle = async function (
+export function choosePrTitle(
   defaultValue: string,
-  validationFn?: (input: string) => boolean | string | Promise<boolean | string>
-): Promise<string> {
-  const { pullRequestTitle } = await inquirer.prompt({
-    name: "pullRequestTitle",
+  validate?: (input: string) => boolean | string | Promise<boolean | string>
+) {
+  return input({
     message: "Pull request title",
-    default: defaultValue ? defaultValue : undefined,
-    validate: validationFn,
+    default: defaultValue,
+    validate,
   });
-
-  return pullRequestTitle;
-};
+}

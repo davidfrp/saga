@@ -12,7 +12,7 @@ import { ActionSequenceState } from "../actions/index.js";
 import { GitService, errors } from "../services/git/index.js";
 import { JiraService, StatusCategory } from "../services/jira/index.js";
 import {
-  chooseChecklist,
+  chooseCheckbox,
   chooseChoice,
   chooseProject,
   chooseTransition,
@@ -222,7 +222,7 @@ export default class Ready extends AuthCommand {
     let reviewers: string[] = [];
 
     if (teamMembers.length > 0) {
-      reviewers = await chooseChecklist(
+      reviewers = await chooseCheckbox(
         "Who should review this pull request?",
         teamMembers
       );

@@ -1,14 +1,8 @@
-import inquirer from "inquirer";
+import { confirm } from "@inquirer/prompts";
 
-export const chooseLoginAgain = async function (): Promise<boolean> {
-  const { shouldLoginAgain } = await inquirer.prompt([
-    {
-      type: "confirm",
-      name: "shouldLoginAgain",
-      message: "You're already logged in. Do you want to re-authenticate?",
-      default: false,
-    },
-  ]);
-
-  return shouldLoginAgain;
-};
+export function chooseLoginAgain() {
+  return confirm({
+    message: "You're already logged in. Do you want to re-authenticate?",
+    default: false,
+  });
+}

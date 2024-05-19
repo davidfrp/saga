@@ -1,7 +1,7 @@
 import fuzzysort from "fuzzysort";
 import {
   Separator,
-  ChoiceOrSeparatorArray,
+  type ChoiceOrSeparatorArray,
 } from "inquirer-autocomplete-standalone";
 import { deansitize, ellipsize } from "./formatting.js";
 

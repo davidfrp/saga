@@ -1,38 +1,16 @@
-import inquirer from "inquirer";
-import inquirerPrompt from "inquirer-autocomplete-prompt";
+import autocomplete from "inquirer-autocomplete-standalone";
 import {
   createSourceFunction,
-  CreateSourceFunctionOptions,
-  CreateSourceFunctionOptionsWithNoSelection,
+  type CreateSourceFunctionOptionsWithoutNoSelection,
 } from "../sourceFunction.js";
 
-function isWithNoSelection<Value>(
-  options: CreateSourceFunctionOptions<Value> | undefined
-): options is CreateSourceFunctionOptionsWithNoSelection<Value> {
-  return options?.noSelectionText !== undefined;
-}
-
-export const chooseChoice = async function <
-  Value extends Record<string, unknown> | string
->(
+export function chooseChoice<Value extends Record<string, unknown> | string>(
   message: string,
   items: Value[],
-  options?: CreateSourceFunctionOptions<Value>
-): Promise<Value> {
-  inquirer.registerPrompt("autocomplete", inquirerPrompt);
-
-  const sourceFunction = isWithNoSelection(options)
-    ? createSourceFunction(items, options)
-    : createSourceFunction(items, options);
-
-  const { item } = await inquirer.prompt([
-    {
-      type: "autocomplete",
-      name: "item",
-      message,
-      source: sourceFunction,
-    },
-  ]);
-
-  return item;
-};
+  options?: CreateSourceFunctionOptionsWithoutNoSelection<Value>
+) {
+  return autocomplete({
+    message,
+    source: createSourceFunction(items, options),
+  });
+}
