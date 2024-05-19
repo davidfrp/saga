@@ -1,15 +1,18 @@
 {
   "compilerOptions": {
-    "module": "ES2020",
-    "moduleResolution": "bundler",
     "declaration": true,
-    "importHelpers": true,
-    "outDir": "dist",
-    "rootDir": "src",
+    "module": "NodeNext",
+    "outDir": "./dist/",
+    "rootDir": "./src/",
     "strict": true,
-    "target": "ES2020"
+    "target": "es2022",
+    "moduleResolution": "node16",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true
   },
-  "include": ["src/**/*"],
+  "include": ["./src/**/*"],
   "ts-node": {
     "esm": true
   }

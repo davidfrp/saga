@@ -1,17 +1,22 @@
-import chalk from "chalk"
-import { AuthenticatedCommand } from "../../authenticatedCommand.js"
+import chalk from "chalk";
+import { AuthCommand } from "../../AuthCommand.js";
+import { ExitError } from "@oclif/core/lib/errors/index.js";
 
-export default class Status extends AuthenticatedCommand {
-  async run(): Promise<void> {
-    const atlassianApiToken = await this.store.secrets.get("atlassianApiToken")
+export default class Token extends AuthCommand {
+  async run() {
+    const atlassianApiToken = await this.config.saga.secure.getSecret(
+      "atlassianApiToken"
+    );
 
     if (!atlassianApiToken) {
-      console.log(
-        `${chalk.red("✗")} Your Atlassian API-token was not found in keychain.`,
-      )
-      this.exit(1)
+      this.log(
+        chalk.red("✗"),
+        "Your Atlassian API-token was not found in keychain."
+      );
+
+      throw new ExitError(1);
     }
 
-    console.log(atlassianApiToken)
+    this.log(atlassianApiToken);
   }
 }
