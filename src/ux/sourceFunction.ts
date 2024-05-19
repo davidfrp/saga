@@ -30,7 +30,7 @@ export type Column<Value> = {
   maxWidth?: number;
 };
 
-export type CreateSourceFunctionOptions<Value> = {
+export interface CreateSourceFunctionOptionsBase<Value> {
   /**
    * If specified, only values from these keys or
    * column value extractors will be used.
@@ -44,14 +44,75 @@ export type CreateSourceFunctionOptions<Value> = {
   columnSpacing?: number;
 
   /**
-   * Function to describe the item. The returned string
+   * Returns a string that describes the item. The description
    * will be displayed below the list of choices.
    * @example (item) => item.author.bio
    */
-  describe?: (item: Value) => string;
-};
+  describe?(item: Value): string;
+}
 
-function resolveChoices<Value>(
+export interface CreateSourceFunctionOptionsWithoutNoSelection<Value>
+  extends CreateSourceFunctionOptionsBase<Value> {
+  /**
+   * If defined, the user will be able to select no value.
+   */
+  noSelectionText?: undefined;
+}
+
+export interface CreateSourceFunctionOptionsWithNoSelection<Value>
+  extends CreateSourceFunctionOptionsBase<Value> {
+  /**
+   * If defined, the user will be able to select no value.
+   */
+  noSelectionText: string;
+}
+
+export type CreateSourceFunctionOptions<Value> =
+  | CreateSourceFunctionOptionsWithoutNoSelection<Value>
+  | CreateSourceFunctionOptionsWithNoSelection<Value>;
+
+export function createSourceFunction<Value>(
+  items: Value[],
+  options?: CreateSourceFunctionOptionsWithoutNoSelection<Value>
+): (input?: string | undefined) => Promise<ChoiceOrSeparatorArray<Value>>;
+
+export function createSourceFunction<Value>(
+  items: Value[],
+  options?: CreateSourceFunctionOptionsWithNoSelection<Value>
+): (
+  input?: string | undefined
+) => Promise<ChoiceOrSeparatorArray<Value | null>>;
+
+export function createSourceFunction<Value>(
+  items: Value[],
+  options: CreateSourceFunctionOptions<Value> = {}
+) {
+  async function sourceFunction(
+    input?: string
+  ): Promise<ChoiceOrSeparatorArray<Value | null>> {
+    const choices = choicesFrom(items, options);
+
+    const searchResultChoices = searchChoices(choices, input);
+
+    const choicesWithSeparator = [...searchResultChoices, new Separator()];
+
+    const { noSelectionText } = options;
+
+    if (!noSelectionText || (input && searchResultChoices.length))
+      return choicesWithSeparator;
+
+    const noSelectionChoice: Choice<null> = {
+      name: noSelectionText,
+      value: null,
+    };
+
+    return [noSelectionChoice, ...choicesWithSeparator];
+  }
+
+  return sourceFunction;
+}
+
+function choicesFrom<Value>(
   items: Value[],
   {
     columns = [],
@@ -115,21 +176,4 @@ function searchChoices<Value>(
     .filter((choice): choice is SearchableChoice<Value> => Boolean(choice));
 
   return filteredChoices;
-}
-
-export function createSourceFunction<Value>(
-  items: Value[],
-  options: CreateSourceFunctionOptions<Value> = {}
-): (input?: string | undefined) => Promise<ChoiceOrSeparatorArray<Value>> {
-  async function sourceFunction(
-    input?: string
-  ): Promise<ChoiceOrSeparatorArray<Value>> {
-    const choices = resolveChoices(items, options);
-
-    const searchResultChoices = searchChoices(choices, input);
-
-    return [...searchResultChoices, new Separator()];
-  }
-
-  return sourceFunction;
 }

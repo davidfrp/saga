@@ -6,16 +6,16 @@ import { createSourceFunction } from "../sourceFunction.js";
 export async function chooseIssue(
   issues: Issue[],
   colors: Record<string, string>
-): Promise<Issue> {
-  // TODO Issue | undefined
-  // TODO remove old sourceFn
-  // TODO replace prompt with input (it'll allow edit of default value)
-
+) {
   function parseJiraDoc(content?: Omit<Document, "version">): string {
-    return content?.text ?? content?.content?.map(parseJiraDoc).join(" ") ?? "";
+    return (
+      content?.text ??
+      content?.content?.map(parseJiraDoc).join(" ").split("\n").join(" ") ??
+      ""
+    );
   }
 
-  const issue = await autocomplete<Issue>({
+  const issue = await autocomplete({
     message: "Select an issue",
     pageSize: 7,
     source: createSourceFunction(issues, {
@@ -45,6 +45,9 @@ export async function chooseIssue(
         },
       ],
       columnSpacing: 2,
+      noSelectionText: chalk.dim(
+        "Select none. Begin work unrelated to an issue."
+      ),
       describe(issue) {
         const description = parseJiraDoc(issue.fields.description);
         const maxLength = 280;
@@ -59,5 +62,5 @@ export async function chooseIssue(
     }),
   });
 
-  return issue;
+  return issue ?? undefined;
 }
