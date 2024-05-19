@@ -20,6 +20,7 @@ import {
   chooseIssue,
   choosePrTitle,
   chooseProject,
+  choosePullChanges,
   chooseStartingPoint,
   chooseTransition,
 } from "../ux/prompts/index.js";
@@ -85,6 +86,8 @@ export default class Begin extends AuthCommand {
         chalk.cyan(startingPoint)
       )
     );
+
+    await this.handleStartingPointNotUpToDate(git, startingPoint, remote);
 
     await this.handlePullRequestAlreadyExists(git, branch, baseBranch);
 
@@ -190,15 +193,7 @@ export default class Begin extends AuthCommand {
       action: async ({ branch, startingPoint, remote }) => {
         await git.fetch();
 
-        const remoteStartingPoint = await git.getRemoteBranch(startingPoint);
-
-        console.log({ startingPoint, remoteStartingPoint, branch, remote });
-
-        await git.checkout([
-          "-B",
-          branch,
-          remoteStartingPoint ?? startingPoint,
-        ]);
+        await git.checkout(["-B", branch, startingPoint]);
 
         const currentBranch = await git.getCurrentBranch();
 
@@ -458,6 +453,22 @@ export default class Begin extends AuthCommand {
     }
   }
 
+  private async handleStartingPointNotUpToDate(
+    git: GitService,
+    branch: string,
+    remote: string
+  ) {
+    const isStartingPointUpToDate = await git.isBranchUpToDate(branch, remote);
+
+    if (!isStartingPointUpToDate) {
+      const shouldPullLatestChanges = await choosePullChanges();
+
+      if (shouldPullLatestChanges) {
+        await git.pull(["--rebase"]);
+      }
+    }
+  }
+
   private async resolveStartingPoint(
     branches: string[],
     defaultBranch: string
@@ -561,6 +572,8 @@ export default class Begin extends AuthCommand {
   }
 
   private async resolveRemote(git: GitService) {
+    await git.fetch();
+
     const remotes = await git.listRemotes();
 
     if (remotes.length > 1) {

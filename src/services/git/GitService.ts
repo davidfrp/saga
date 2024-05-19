@@ -181,6 +181,19 @@ export class GitService {
     return stdout.trim();
   }
 
+  async isBranchUpToDate(branch: string, remote: string) {
+    if (branch.startsWith(remote)) {
+      return true;
+    }
+
+    const { stdout } = await this.exec(
+      `git fetch && git log ${branch}..${remote}/${branch}`,
+      { throwOnError: false }
+    );
+
+    return !stdout.trim();
+  }
+
   async openPullRequestExists(options?: OpenPullRequestExistsOptions) {
     const { stderr, stdout } = await this.exec(
       "gh pr view --json baseRefName,headRefName,state",
@@ -431,5 +444,9 @@ export class GitService {
 
   async push(options?: FlagOptions) {
     await this.exec(`git push ${this.getFlags(options)}`);
+  }
+
+  async pull(options?: FlagOptions) {
+    await this.exec(`git pull ${this.getFlags(options)}`);
   }
 }
