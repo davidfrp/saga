@@ -607,7 +607,7 @@ export default class Begin extends AuthCommand {
       }
 
       if (input.startsWith(`${remote}/`)) {
-        return "Branch name should not start with the remote name.";
+        return "Branch name should not start with name of a remote.";
       }
 
       const isBranchNameValid = await git.isBranchNameValid(input);
@@ -729,6 +729,7 @@ export default class Begin extends AuthCommand {
             "parent",
             "priority",
             "assignee",
+            "description",
           ],
         });
 
@@ -747,9 +748,22 @@ export default class Begin extends AuthCommand {
       };
     });
 
+    const colors: Record<string, string> = {};
+
+    const promises = issues.map(async (issue) => {
+      const { issuetype } = issue.fields;
+
+      if (issuetype?.iconUrl) {
+        const color = await jira.colorFromSvg(issuetype.iconUrl);
+        colors[issue.key] = color ?? "";
+      }
+    });
+
+    await Promise.all(promises);
+
     this.spinner.stop();
 
-    const issue = await chooseIssue(jira, issues);
+    const issue = await chooseIssue(issues, colors);
 
     return issue;
   }

@@ -1,18 +1,12 @@
-import inquirer from "inquirer";
+import { input } from "@inquirer/prompts";
 
-export const chooseBranch = async function (
+export function chooseBranch(
   defaultValue: string,
   validationFn?: (input: string) => boolean | string | Promise<boolean | string>
-): Promise<string> {
-  const { branchName } = await inquirer.prompt([
-    {
-      type: "input",
-      name: "branchName",
-      message: "Enter a branch name",
-      default: defaultValue ? defaultValue : undefined,
-      validate: validationFn,
-    },
-  ]);
-
-  return branchName;
-};
+) {
+  return input({
+    message: "Enter a branch name",
+    default: defaultValue,
+    validate: validationFn,
+  });
+}

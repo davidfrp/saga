@@ -1,7 +1,7 @@
 import inquirer from "inquirer";
 import inquirerPrompt from "inquirer-autocomplete-prompt";
 import type { IssueTransition } from "jira.js/out/version3/models/index.js";
-import { createSourceFn } from "../sourceFn.js";
+import { createSourceFunction } from "../sourceFunction.js";
 
 export const chooseTransition = async function (
   transitions: IssueTransition[]
@@ -13,7 +13,7 @@ export const chooseTransition = async function (
       type: "autocomplete",
       name: "transition",
       message: "Select new issue status",
-      source: createSourceFn(transitions, {
+      source: createSourceFunction(transitions, {
         columns: [
           {
             value: (transition) => transition.name || transition.id || "",

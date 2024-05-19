@@ -48,6 +48,7 @@
     }
   },
   "dependencies": {
+    "@inquirer/prompts": "^5.0.4",
     "@oclif/core": "^3",
     "@oclif/plugin-help": "^6",
     "@oclif/plugin-plugins": "^4",
@@ -56,6 +57,7 @@
     "fuzzysort": "^2.0.4",
     "inquirer": "^9.2.15",
     "inquirer-autocomplete-prompt": "^3.0.1",
+    "inquirer-autocomplete-standalone": "^0.8.1",
     "jira.js": "^3.0.4",
     "keytar": "^7.9.0",
     "ora": "^8.0.1",

@@ -1,6 +1,6 @@
 import inquirer from "inquirer";
 import inquirerPrompt from "inquirer-autocomplete-prompt";
-import { createSourceFn } from "../sourceFn.js";
+import { createSourceFunction } from "../sourceFunction.js";
 
 export const chooseStartingPoint = async function (
   branches: string[]
@@ -12,7 +12,7 @@ export const chooseStartingPoint = async function (
       type: "autocomplete",
       name: "startingPoint",
       message: "Choose a starting point",
-      source: createSourceFn(branches),
+      source: createSourceFunction(branches),
     },
   ]);
 

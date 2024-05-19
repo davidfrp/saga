@@ -1,7 +1,7 @@
 import inquirer from "inquirer";
 import inquirerPrompt from "inquirer-autocomplete-prompt";
 import { Project } from "jira.js/out/version3/models/index.js";
-import { createSourceFn } from "../sourceFn.js";
+import { createSourceFunction } from "../sourceFunction.js";
 
 export const chooseProject = async function (
   projects: Project[]
@@ -13,7 +13,7 @@ export const chooseProject = async function (
       type: "autocomplete",
       name: "project",
       message: "Select a project",
-      source: createSourceFn(projects, {
+      source: createSourceFunction(projects, {
         columns: [
           {
             value: (project) => project.key,
