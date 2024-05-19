@@ -62,6 +62,17 @@ export default class Ready extends AuthCommand {
     this.log();
 
     await this.handleWhatsNext(jira, git, issue);
+
+    if (!shouldUndo) {
+      this.log();
+      this.log(
+        chalk.dim(
+          "Hint: You can use the --undo flag with the ready command to undo this action."
+        )
+      );
+    }
+
+    this.log();
   }
 
   private async handleWhatsNext(
@@ -95,8 +106,6 @@ export default class Ready extends AuthCommand {
         this.open(jira.constructIssueUrl(issue));
         break;
     }
-
-    this.log();
   }
 
   private getSequencer(
