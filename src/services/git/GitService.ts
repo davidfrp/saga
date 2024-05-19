@@ -391,10 +391,6 @@ export class GitService {
     if (stderr.includes("convertPullRequestToDraft")) {
       throw new DraftPullRequestNotSupportedError();
     }
-
-    if (stderr) {
-      throw new Error(stderr);
-    }
   }
 
   async addReviewers(reviewers: string[]) {
