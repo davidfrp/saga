@@ -121,7 +121,7 @@ export class JiraService {
   }
 
   public constructIssueUrl(issue: Issue) {
-    return `https://${this.host}/browse/${issue.key}`;
+    return `${this.host}/browse/${issue.key}`;
   }
 
   public extractIssueKey(projectKey: string, value: string) {

@@ -39,13 +39,17 @@ export default class Ready extends AuthCommand {
       this.initGitService(),
     ]);
 
+    const shouldUndo = flags.undo;
+
+    if (!shouldUndo) {
+      this.log(chalk.dim("(Use --undo flag to undo this action)"));
+    }
+
     const projectKey = await this.resolveProjectKey(jira);
 
     await this.handlePullRequestExistance(git);
 
     const issue = await this.resolveIssue(jira, git, projectKey);
-
-    const shouldUndo = flags.undo;
 
     const transition = issue
       ? await this.resolveIssueTransition(jira, shouldUndo, issue)
@@ -60,15 +64,6 @@ export default class Ready extends AuthCommand {
     this.log();
 
     await this.handleWhatsNext(jira, git, issue);
-
-    if (!shouldUndo) {
-      this.log();
-      this.log(
-        chalk.dim(
-          "Hint: You can use the --undo flag with the ready command to undo this action."
-        )
-      );
-    }
 
     this.log();
   }
@@ -110,8 +105,6 @@ export default class Ready extends AuthCommand {
         this.open(issueUrl);
         break;
     }
-
-    this.log();
   }
 
   private getSequencer(
@@ -284,15 +277,21 @@ export default class Ready extends AuthCommand {
         ) ?? null;
     }
 
-    if (!transition) {
+    if (!transitionStatus) {
+      this.log(chalk.yellow("!"), "No issue status found.");
+    }
+
+    if (transitionStatus && !transition) {
       this.log(
         chalk.yellow("!"),
         format(
-          "The issue status %s is no longer available for this issue.",
+          "The issue status %s is no longer available.",
           chalk.cyan(transitionStatus)
         )
       );
+    }
 
+    if (!transition) {
       transition = await chooseTransition(filteredTransitions);
 
       if (!transition.name) {
