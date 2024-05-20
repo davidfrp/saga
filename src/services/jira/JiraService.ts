@@ -23,7 +23,7 @@ export class JiraService {
   constructor(options: JiraServiceOptions) {
     const { apiToken, email, host, middlewares } = options;
 
-    this.host = host.startsWith("https://") ? host : `https://${host}`;
+    this.host = host.startsWith("http") ? host : `https://${host}`;
     this.email = email.trim().toLowerCase();
 
     this.#client = new JiraClient({

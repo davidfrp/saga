@@ -1,29 +1,19 @@
 import { ExitError } from "@oclif/core/lib/errors/index.js";
 import chalk from "chalk";
 import { format } from "util";
-import { AuthCommand } from "../../AuthCommand.js";
+import { AuthCommand, Credentials } from "../../AuthCommand.js";
 import {
   chooseEmail,
   chooseHostname,
   chooseLoginAgain,
   chooseToken,
 } from "../../ux/prompts/index.js";
-import { JiraService } from "../../services/jira/index.js";
-
-export type Credentials = {
-  email: string;
-  host: string;
-  apiToken: string;
-};
 
 export default class Login extends AuthCommand {
   public override async run() {
-    const jira = await this.initJiraService();
-
     const credentials = await this.getCredentials();
 
     const shouldReauthenticate = await this.resolveShouldReauthenticate(
-      jira,
       credentials
     );
 
@@ -34,6 +24,12 @@ export default class Login extends AuthCommand {
     const { email, host, apiToken } = await this.resolveCredentials();
 
     await this.handleAuthentication({ email, host, apiToken });
+  }
+
+  override checkHasAllCredentials(
+    _credentials: Partial<Credentials>
+  ): _credentials is Credentials {
+    return true;
   }
 
   private async handleAuthentication(credentials: Credentials) {
@@ -95,15 +91,14 @@ export default class Login extends AuthCommand {
     return { email, host, apiToken };
   }
 
-  private async resolveShouldReauthenticate(
-    jira: JiraService,
-    credentials: Partial<Credentials>
-  ) {
+  private async resolveShouldReauthenticate(credentials: Partial<Credentials>) {
     let shouldReauthenticate = true;
 
-    const hasAllCredentials = this.checkHasAllCredentials(credentials);
+    const hasAllCredentials = super.checkHasAllCredentials(credentials);
 
     if (hasAllCredentials) {
+      const jira = await this.initJiraService();
+
       const currentUser = await jira.client.myself
         .getCurrentUser()
         .catch((error) => {

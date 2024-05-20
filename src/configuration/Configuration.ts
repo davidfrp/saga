@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 type JSONValue =
   | string
@@ -34,7 +35,7 @@ export class Configuration<
   readonly #defaultSchema: TSchema;
 
   constructor(readonly path: string, readonly schema: TSchema) {
-    this.#defaultSchema = schema;
+    this.#defaultSchema = structuredClone(schema);
     this.load();
   }
 
@@ -47,17 +48,26 @@ export class Configuration<
     this.save();
   }
 
+  public clear() {
+    for (const key in this.schema) {
+      this.schema[key].value = this.#defaultSchema[key].value;
+    }
+
+    this.save();
+  }
+
   private load() {
+    if (!existsSync(this.path)) {
+      mkdirSync(dirname(this.path), { recursive: true });
+      this.save();
+    }
+
     const data: Record<keyof TSchema, JSONValue> = JSON.parse(
       readFileSync(this.path, "utf-8")
     );
 
     for (const key in this.schema) {
-      const defaultValue = this.#defaultSchema[key].value;
-
-      const newValue = data[key] === undefined ? defaultValue : data[key];
-
-      this.schema[key].value = newValue;
+      this.schema[key].value = data[key] ?? this.#defaultSchema[key].value;
     }
   }
 

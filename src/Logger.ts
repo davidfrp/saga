@@ -1,4 +1,5 @@
 import { writeFile } from "node:fs/promises";
+import { deansitize } from "./ux/formatting.js";
 
 export class Logger {
   readonly #messages: string[] = [];
@@ -6,7 +7,7 @@ export class Logger {
   constructor(public path: string) {}
 
   public log(message: string): void {
-    this.#messages.push(new Date().toISOString() + "\n" + message);
+    this.#messages.push(`${new Date().toISOString()} ${deansitize(message)}`);
   }
 
   public save() {

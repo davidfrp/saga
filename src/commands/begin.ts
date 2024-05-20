@@ -385,12 +385,10 @@ export default class Begin extends AuthCommand {
       argName: ["jiraHostname", "issue", "branch"],
     });
 
-    // FIXME issue.url
-    // FIXME hostname include https://
-    // FIXME remove hostname
+    const jiraHostname = this.config.saga.get("jiraHostname");
 
     const emptyCommitMessage = templateFn({
-      jiraHostname: this.config.saga.get("jiraHostname"),
+      jiraHostname,
       issue,
       branch,
     });
@@ -405,8 +403,10 @@ export default class Begin extends AuthCommand {
       argName: ["jiraHostname", "issue", "branch"],
     });
 
+    const jiraHostname = this.config.saga.get("jiraHostname");
+
     const pullRequestDescription = templateFn({
-      jiraHostname: this.config.saga.get("jiraHostname"),
+      jiraHostname,
       issue,
       branch,
     });
@@ -421,13 +421,16 @@ export default class Begin extends AuthCommand {
       argName: ["jiraHostname", "issue", "branch"],
     });
 
+    const jiraHostname = this.config.saga.get("jiraHostname");
+
     const defaultPullRequestTitle = templateFn({
-      jiraHostname: this.config.saga.get("jiraHostname"),
+      jiraHostname,
       issue,
       branch,
     });
 
     const pullRequestTitle = await choosePrTitle(defaultPullRequestTitle);
+
     // TODO validate against pattern
 
     return pullRequestTitle;
@@ -601,15 +604,12 @@ export default class Begin extends AuthCommand {
       argName: ["jiraHostname", "issue"],
     });
 
+    const jiraHostname = this.config.saga.get("jiraHostname");
+
     const defaultBranch = templateFn({
-      jiraHostname: this.config.saga.get("jiraHostname"),
+      jiraHostname,
       issue,
     });
-
-    // TODO USE DIFFERENT TEMPLATES WHEN ISSUE IS UNDEFINED
-    // TODO distribute through Homebrew.
-    // TODO add custom lifecycles, e.g. running linting before readying a PR.
-    // TODO replace prompt with input (it'll allow edit of default value)
 
     const branchNamePattern = new RegExp(
       this.config.saga.get("branchNamePattern") ?? ""

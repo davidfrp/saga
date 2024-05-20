@@ -14,9 +14,11 @@ The following templates can be modified:
 - \`emptyCommitMessageTemplate\`: formats the message for an empty commit
 
 A context is passed to each template, which is an object which may contain the following properties:
+- \`jiraHostname\`: available in all templates for all commands
 - \`branch\`: available in all templates except \`branchNameTemplate\` for all commands 
 - \`issue\`: available in all templates for all command (may be null)
 
+The \`jiraHostname\` property is a string that contains the hostname of the Jira instance.
 The \`branch\` property is a string that contains the name of the new branch. 
 The \`issue\` property is an object of the current issue that's being worked on. More information about the issue details can be found in the Jira REST API documentation: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/#api-rest-api-3-issue-issueidorkey-get-response
 

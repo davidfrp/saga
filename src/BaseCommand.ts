@@ -114,9 +114,7 @@ export abstract class BaseCommand extends Command {
 
     this.config.saga = Object.assign(
       new Configuration(sagaConfigPath, SAGA_CONFIG_SCHEMA),
-      {
-        secure: new SecureConfiguration(),
-      }
+      { secure: new SecureConfiguration() }
     );
   }
 
@@ -125,7 +123,12 @@ export abstract class BaseCommand extends Command {
 
     if (error instanceof ExitError) return;
 
-    this.logger.log(error.stack ?? error.message ?? JSON.stringify(error));
+    this.logger.log(
+      `ERROR [BaseCommand] ${
+        error.stack ?? error.message ?? JSON.stringify(error)
+      }`
+    );
+
     await this.logger.save();
 
     this.log(
@@ -138,6 +141,11 @@ export abstract class BaseCommand extends Command {
 
   public override log(message?: string, ...args: any[]) {
     this.spinner.stop();
+
+    if (message) {
+      this.logger.log(`INFO [BaseCommand] ${message} ${args.join(" ")}`);
+    }
+
     return super.log(message, ...args);
   }
 

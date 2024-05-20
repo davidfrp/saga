@@ -402,9 +402,11 @@ export class GitService {
   }
 
   async isBranchNameValid(branch: string): Promise<boolean> {
+    if (!branch) return false;
+
     const { stderr } = await this.exec(
       `git check-ref-format --branch ${branch}`
-    );
+    ).catch(() => ({ stderr: true }));
 
     return !stderr;
   }

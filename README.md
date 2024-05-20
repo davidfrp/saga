@@ -47,8 +47,6 @@ To configure Saga, you can either edit your `config.json` directly or use the `s
 
 ```sh-session
 saga config list
-saga config set <key> <value>
-saga config get <key>
 ```
 
 ## **Commands**

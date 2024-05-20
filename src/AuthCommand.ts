@@ -52,9 +52,10 @@ export abstract class AuthCommand extends BaseCommand {
 
   public async initGitService() {
     const gitService = new GitService({
-      onCommand: (command) => this.logger.log(command),
-      onOutput: (output) => this.logger.log(output),
-      onError: (error) => this.logger.log(error.stack ?? error.message),
+      onCommand: (command) => this.logger.log(`INFO [GitService] ${command}`),
+      onOutput: (output) => this.logger.log(`INFO [GitService] ${output}`),
+      onError: (error) =>
+        this.logger.log(`WARN [GitService] ${error.stack ?? error.message}`),
     });
 
     await gitService.checkRequirements();
@@ -76,15 +77,18 @@ export abstract class AuthCommand extends BaseCommand {
     const credentials = await this.getCredentials();
     const hasAllCredentials = this.checkHasAllCredentials(credentials);
 
-    if (!hasAllCredentials) {
-      throw new Error("Missing credentials");
-    }
+    if (!hasAllCredentials) throw new Error("Missing credentials");
 
     return new JiraService({
       ...credentials,
       middlewares: {
+        onResponse: (response) => {
+          this.logger.log(`INFO [JiraService] ${JSON.stringify(response)}`);
+        },
         onError: (error) => {
-          this.logger.log(JSON.stringify(error.toJSON()));
+          this.logger.log(
+            `WARN [JiraService] ${JSON.stringify(error.toJSON())}`
+          );
         },
       },
     });
